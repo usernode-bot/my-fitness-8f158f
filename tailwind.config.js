@@ -7,6 +7,8 @@
 // To build it locally (optional; the image build does this for you):
 //   npm ci --include=dev
 //   npm run build
+const { green, orange } = require('tailwindcss/colors');
+
 module.exports = {
   // Every file that can contain a class name. Tailwind's extractor is a
   // regex over source text, so it finds class names written as whole
@@ -20,14 +22,23 @@ module.exports = {
   // extractor cannot see them. Prefer whole literals in the markup instead.
   safelist: [],
 
-  // Matches the <html class="dark"> in public/index.html: dark: variants key
-  // off that class rather than the OS colour-scheme preference.
+  // dark: variants key off the .dark class that the theme script in
+  // public/index.html toggles from the platform's Light/Dark setting.
   darkMode: 'class',
 
   // Stops hover: styles sticking after a tap on touch screens. Required by
   // the usernode-native UI kit and harmless without it.
   future: { hoverOnlyWhenSupported: true },
 
-  theme: { extend: {} },
+  // Brand palette: green is the primary (rings, buttons, active nav),
+  // orange the accent (over-target states, secondary bars, demo badge).
+  theme: {
+    extend: {
+      colors: {
+        primary: green,
+        accent: orange,
+      },
+    },
+  },
   plugins: [],
 };

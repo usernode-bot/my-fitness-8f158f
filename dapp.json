@@ -1,3 +1,31 @@
 {
-  "secrets": []
+  "secrets": [],
+  "tests": [
+    {
+      "id": "onboarding.wizard",
+      "name": "Onboarding wizard renders",
+      "path": "/",
+      "expectSelector": "#wizard",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "calculations.js",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "dashboard.demo",
+      "name": "Dashboard renders with demo plan",
+      "path": "/?demo=1",
+      "expectSelector": "#calorie-ring",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "calculations.js",
+        "tailwind.config.js"
+      ]
+    }
+  ]
 }

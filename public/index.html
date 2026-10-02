@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -26,8 +26,7 @@
             if (seen.has(val)) return '[Circular]';
             seen.add(val);
           }
-          if (typeof val === 'function') return '[Function ' + (val.name || 'anonymous') + ']';
-          if (val instanceof Error) return val.stack || (val.name + ': ' + val.message);
+          if (typeof val === 'function') val = String(val);
           return val;
         });
       } catch (e) { try { return String(v); } catch (_) { return '[unserializable]'; } }
@@ -64,131 +63,841 @@
   })();
   </script>
   <title>My Fitness</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237c3aed'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
-  <!-- Tailwind, PRECOMPILED for this app (was cdn.tailwindcss.com's
-       in-browser engine plus an inline tailwind.config here). The config
-       moved to tailwind.config.js in the repo root; npm run build compiles
-       it to public/tailwind.css with Docker or Paketo on every image build, so the
-       stylesheet is regenerated from THIS commit's markup every deploy and
-       can never drift behind the code. ~7 KB of CSS instead of a ~400 KB
-       engine, and no flash of unstyled content.
-       Writing class names as whole literals is what keeps this working — a
-       class assembled from fragments at runtime (e.g. "bg-" + tone + "-500")
-       is invisible to the compiler. If you genuinely need runtime-generated
-       classes, swap this link for the platform-hosted engine instead:
-       <script src="/usernode-tailwind/v1/tailwind.js"></script> -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%2316a34a'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+  <!-- Tailwind, PRECOMPILED for this app. The config lives in
+       tailwind.config.js in the repo root; npm run build compiles it to
+       public/tailwind.css with Docker or Paketo on every image build.
+       Class names must be written as whole literals so the compiler sees
+       them. -->
   <link rel="stylesheet" href="/tailwind.css">
-  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path (the
-       handler in server.js serves it under a plain "node server.js"; the
-       platform's edge answers it everywhere else). Never vendor it and never
-       write a hostname in front of it.
-       It is NOT conditional on this app calling a bridge API: it is also how
-       the app ANSWERS the shell, so a scaffold without it is invisible to
-       anything that asks the frame a question. Offline launch is one of those.
-       Another is the page's colour: the bridge reports this document's opaque
-       ground to the shell (#1581), which is what makes the platform bar above
-       the app take the app's tone instead of the viewer's theme (#1945). This
-       scaffold paints a dark page (bg-zinc-950 on the body element), so
-       without this tag a brand-new app sits under a light bar. -->
+  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path.
+       Not conditional on calling a bridge API: it is also how the app
+       ANSWERS the shell (offline launch included) and how the page's colour
+       reaches the platform bar. -->
   <script src="/usernode-bridge/v1/bridge.js"></script>
+  <script>
+    // Follow the platform's Light/Dark setting. Inside the app frame
+    // prefers-color-scheme sees the OS, not the shell, so read the
+    // resolved theme the bridge publishes and fall back to the OS
+    // preference only when the app is open standalone.
+    (function () {
+      var media = window.matchMedia('(prefers-color-scheme: dark)');
+      function applyTheme() {
+        var theme = (window.usernode && window.usernode.theme)
+          || (media.matches ? 'dark' : 'light');
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        document.documentElement.style.colorScheme = theme;
+      }
+      applyTheme();
+      window.addEventListener('usernode:theme-changed', applyTheme);
+      media.addEventListener('change', applyTheme);
+    })();
+  </script>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen">
-  <main class="max-w-md mx-auto px-4 py-10 flex flex-col gap-6">
-
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <section class="rounded-2xl border border-violet-500/30 bg-gradient-to-b from-violet-600/20 to-transparent p-6 text-center flex flex-col items-center gap-3">
-      <span class="inline-block rounded-full bg-violet-600/20 text-violet-300 text-xs font-semibold uppercase tracking-wide px-3 py-1">Starter template</span>
-      <h1 class="text-2xl font-bold">My Fitness</h1>
-      <p class="text-sm text-zinc-300 leading-relaxed">Welcome to your new app! Everything on this screen is placeholder content that came with it.</p>
-      <p class="text-sm text-zinc-300 leading-relaxed">Tap the <strong class="text-violet-300 font-semibold">Homeroom icon</strong> in the header and choose <strong class="text-violet-300 font-semibold">Start a new change</strong> to start building your app. Describe what you'd like in plain English, and it will be turned into your real app.</p>
-    </section>
-
-    <section>
-      <h2 class="text-sm font-medium text-zinc-500 mb-2 px-1">What's already working</h2>
-      <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 divide-y divide-zinc-800">
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Sign-in</p>
-            <p class="text-sm text-zinc-400">You're signed in through Homeroom automatically — no accounts to build.</p>
-          </div>
-        </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Database</p>
-            <p class="text-sm text-zinc-400">Your app has its own private database, ready to store things.</p>
-          </div>
-        </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Live API</p>
-            <p class="text-sm text-zinc-400">The example below talks to a real server — try it.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 flex flex-col items-center gap-5">
-      <div class="w-full flex items-baseline justify-between gap-2">
-        <h2 class="text-sm font-medium text-zinc-500">Try the example</h2>
-        <span class="text-xs text-zinc-600">This example will be replaced</span>
-      </div>
-
-      <button id="press-btn" class="w-32 h-32 rounded-full bg-violet-600 hover:bg-violet-500 active:scale-95 transition-all text-white text-xl font-bold shadow-lg shadow-violet-600/30">
-        Press!
-      </button>
-
-      <div id="count" class="text-lg text-zinc-400">0 total presses</div>
-
-      <div class="w-full max-w-sm">
-        <h3 class="text-sm font-medium text-zinc-500 mb-2 text-center">Leaderboard</h3>
-        <div id="leaderboard" class="space-y-1"></div>
-      </div>
-    </section>
-
-    <p class="text-center text-xs text-zinc-600">Built on Homeroom — this template screen disappears once you build your real app.</p>
-  </main>
+<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 min-h-screen antialiased">
+  <div id="app"></div>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
-    const headers = token ? { 'x-usernode-token': token } : {};
+  'use strict';
 
-    async function loadLeaderboard() {
-      const res = await fetch('/api/leaderboard', { headers });
-      if (!res.ok) return;
-      const { leaderboard } = await res.json();
-      const el = document.getElementById('leaderboard');
-      if (!leaderboard.length) {
-        el.innerHTML = '<p class="text-center text-zinc-600 text-sm">No presses yet</p>';
-        return;
+  // ---------------------------------------------------------------------
+  // Plumbing
+  // ---------------------------------------------------------------------
+
+  const params = new URLSearchParams(window.location.search);
+  const TOKEN = params.get('token') || '';
+  const DEMO = params.get('demo') === '1';
+
+  function apiUrl(path) {
+    return path + (DEMO ? (path.includes('?') ? '&' : '?') + 'demo=1' : '');
+  }
+
+  async function api(path, options) {
+    const opts = options || {};
+    const res = await fetch(apiUrl(path), {
+      method: opts.method || 'GET',
+      headers: Object.assign(
+        { 'Content-Type': 'application/json' },
+        TOKEN ? { 'x-usernode-token': TOKEN } : {}
+      ),
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const err = new Error(data.error || ('Request failed (' + res.status + ')'));
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  const appEl = document.getElementById('app');
+
+  const state = {
+    booted: false,
+    view: 'loading',          // loading | wizard | dashboard | signedout | bootError
+    onboarded: false,
+    profile: null,
+    goal: null,
+    targets: null,
+    demo: false,
+    day: null,
+    meals: null,              // { groups, totals, count }
+    water: null,              // { glasses, targetMl, glassMl, ml }
+    daysToTarget: null,
+    dashError: null,
+    dashLoading: false,
+    waterPending: false,
+    waterError: null,
+    wiz: null,                // wizard state, created on demand
+  };
+
+  // ---------------------------------------------------------------------
+  // Shared health math (mirrors calculations.js on the server; the values
+  // the server returns after save are the authoritative ones).
+  // ---------------------------------------------------------------------
+
+  const ACTIVITY_FACTORS = {
+    sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9,
+  };
+  const ACTIVITY_OPTIONS = [
+    { value: 'sedentary', label: 'Sedentary', hint: 'Little or no exercise' },
+    { value: 'light', label: 'Lightly active', hint: 'Exercise 1 to 3 days a week' },
+    { value: 'moderate', label: 'Moderately active', hint: 'Exercise 3 to 5 days a week' },
+    { value: 'active', label: 'Very active', hint: 'Exercise 6 or 7 days a week' },
+    { value: 'very_active', label: 'Extremely active', hint: 'Physical job or twice daily training' },
+  ];
+  const GENDER_OPTIONS = [
+    { value: 'male', label: 'Male' },
+    { value: 'female', label: 'Female' },
+    { value: 'other', label: 'Other' },
+  ];
+  const GOAL_OPTIONS = [
+    { value: 'lose', label: 'Lose weight', hint: 'Aim for about half a kilo per week' },
+    { value: 'maintain', label: 'Maintain weight', hint: 'Keep your current weight' },
+    { value: 'gain', label: 'Gain weight', hint: 'Build up gradually' },
+  ];
+  const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
+
+  const CALORIE_FLOOR = 1200;
+  const MACRO_SPLITS = {
+    lose: { protein: 40, carbs: 30, fat: 30 },
+    maintain: { protein: 30, carbs: 40, fat: 30 },
+    gain: { protein: 30, carbs: 45, fat: 25 },
+  };
+
+  function roundTo(value, step) { return Math.round(value / step) * step; }
+  function round1(value) { return Math.round(value * 10) / 10; }
+
+  function bmiCategory(bmi) {
+    if (bmi < 18.5) return 'Underweight';
+    if (bmi < 25) return 'Healthy';
+    if (bmi < 30) return 'Overweight';
+    return 'Obese';
+  }
+
+  function computeTargets(p, g) {
+    const kg = Number(p.weight_kg), cm = Number(p.height_cm), age = Number(p.age);
+    const bmi = round1(kg / Math.pow(cm / 100, 2));
+    const offset = p.gender === 'male' ? 5 : p.gender === 'female' ? -161 : -78;
+    const bmr = 10 * kg + 6.25 * cm - 5 * age + offset;
+    const tdee = bmr * ACTIVITY_FACTORS[p.activity_level];
+    const raw = g.goal_type === 'lose' ? tdee - 500 : g.goal_type === 'gain' ? tdee + 300 : tdee;
+    const floored = raw < CALORIE_FLOOR;
+    const calorieTarget = Math.max(CALORIE_FLOOR, roundTo(raw, 10));
+    const split = MACRO_SPLITS[g.goal_type] || MACRO_SPLITS.maintain;
+    return {
+      bmi,
+      bmiCategory: bmiCategory(bmi),
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      calorieTarget,
+      calorieFloorApplied: floored,
+      proteinGrams: Math.round(calorieTarget * split.protein / 100 / 4),
+      carbsGrams: Math.round(calorieTarget * split.carbs / 100 / 4),
+      fatGrams: Math.round(calorieTarget * split.fat / 100 / 9),
+      macroSplit: split,
+      waterTargetMl: Math.min(4000, Math.max(1500, roundTo(kg * 35, 100))),
+      glassMl: 250,
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Router (hash based: #dashboard default, #profile opens the wizard)
+  // ---------------------------------------------------------------------
+
+  function routeView() {
+    return location.hash === '#profile' ? 'wizard' : 'dashboard';
+  }
+
+  window.addEventListener('hashchange', () => {
+    if (!state.booted) return;
+    const view = routeView();
+    if (view === 'wizard') {
+      openWizard(state.onboarded);
+    } else if (state.onboarded) {
+      state.view = 'dashboard';
+      state.wiz = null;
+      render();
+      loadDashboard();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------
+
+  async function boot() {
+    try {
+      const data = await api('/api/profile');
+      state.onboarded = !!data.onboarded;
+      state.demo = !!data.demo;
+      if (data.onboarded) {
+        state.profile = data.profile;
+        state.goal = data.goal;
+        state.targets = data.targets;
+        if (routeView() === 'wizard') openWizard(true);
+        else { state.view = 'dashboard'; render(); loadDashboard(); }
+      } else {
+        openWizard(false);
       }
-      el.innerHTML = leaderboard.map((r, i) =>
-        '<div class="flex justify-between px-3 py-1 rounded ' + (i === 0 ? 'bg-violet-600/20 text-violet-300' : 'text-zinc-400') + '">' +
-        '<span>' + (i + 1) + '. ' + r.username + '</span>' +
-        '<span class="font-mono">' + r.presses + '</span></div>'
-      ).join('');
-      const total = leaderboard.reduce((s, r) => s + parseInt(r.presses), 0);
-      document.getElementById('count').textContent = total + ' total presses';
+    } catch (err) {
+      if (err.status === 401) { state.view = 'signedout'; render(); }
+      else { state.bootError = err.message || 'Could not load the app'; state.view = 'bootError'; render(); }
+    }
+    state.booted = true;
+  }
+
+  function openWizard(editing) {
+    state.view = 'wizard';
+    state.onboarded = !!editing;
+    const p = editing && state.profile ? state.profile : null;
+    const g = editing && state.goal ? state.goal : null;
+    state.wiz = {
+      editing: !!editing,
+      step: 1,
+      saving: false,
+      serverError: null,
+      errors: {},
+      data: {
+        name: p ? p.name : '',
+        age: p ? p.age : '',
+        gender: p ? p.gender : '',
+        email: p && p.email ? p.email : '',
+        height_cm: p ? p.height_cm : '',
+        weight_kg: p ? p.weight_kg : '',
+        activity_level: p ? p.activity_level : '',
+        goal_type: g ? g.goal_type : '',
+        target_weight_kg: g && g.target_weight_kg != null ? g.target_weight_kg : '',
+        target_date: g && g.target_date ? g.target_date : '',
+      },
+    };
+    render();
+  }
+
+  // ---------------------------------------------------------------------
+  // Small building blocks
+  // ---------------------------------------------------------------------
+
+  const iconDashboard = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
+  const iconProfile = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>';
+  const iconWater = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3s6 7.2 6 11.4A6 6 0 0 1 6 14.4C6 10.2 12 3 12 3Z"/></svg>';
+
+  function card(inner, extraClass) {
+    return '<section class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-5 '
+      + (extraClass || '') + '">' + inner + '</section>';
+  }
+
+  function cardTitle(text, sub) {
+    return '<div class="flex items-baseline justify-between gap-2 mb-4">'
+      + '<h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">' + text + '</h2>'
+      + (sub ? '<span class="text-xs text-zinc-500">' + sub + '</span>' : '')
+      + '</div>';
+  }
+
+  function errorBox(message, retryLabel) {
+    return '<div class="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-700 dark:text-red-300 flex items-center justify-between gap-3">'
+      + '<span>' + esc(message) + '</span>'
+      + '<button data-action="retry" class="shrink-0 min-h-[44px] px-4 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500 transition-colors">' + (retryLabel || 'Retry') + '</button>'
+      + '</div>';
+  }
+
+  function field(labelHtml, inputHtml, errorText) {
+    return '<label class="block mb-4">'
+      + '<span class="block text-sm font-medium mb-1.5">' + labelHtml + '</span>'
+      + inputHtml
+      + (errorText ? '<span class="block text-sm text-red-600 dark:text-red-400 mt-1">' + esc(errorText) + '</span>' : '')
+      + '</label>';
+  }
+
+  const inputClass = 'w-full min-h-[44px] rounded-xl border bg-white dark:bg-zinc-950 px-3.5 text-base '
+    + 'border-zinc-300 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600';
+
+  function textInput(name, attrs, value) {
+    return '<input name="' + name + '" ' + attrs + ' value="' + esc(value == null ? '' : value) + '" class="' + inputClass + '">';
+  }
+
+  function optionRow(group, opt, checked, hint) {
+    return '<label class="flex items-center gap-3 px-4 min-h-[44px] py-2.5 cursor-pointer">'
+      + '<input type="radio" name="' + group + '" value="' + opt.value + '" ' + (checked ? 'checked' : '')
+      + ' class="w-5 h-5 accent-primary-600 shrink-0">'
+      + '<span class="flex-1"><span class="block text-sm font-medium">' + esc(opt.label) + '</span>'
+      + (hint ? '<span class="block text-xs text-zinc-500">' + esc(hint) + '</span>' : '')
+      + '</span></label>';
+  }
+
+  function optionGroup(group, options, selected, hints) {
+    return '<div class="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">'
+      + options.map((o) => optionRow(group, o, o.value === selected, hints ? o.hint : null)).join('')
+      + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Wizard
+  // ---------------------------------------------------------------------
+
+  function validateStep(step, d) {
+    const errors = {};
+    if (step === 1) {
+      if (!d.name || !d.name.trim()) errors.name = 'Enter your name';
+      else if (d.name.trim().length > 100) errors.name = 'Name must be 100 characters or fewer';
+      const age = Number(d.age);
+      if (!Number.isInteger(age) || age < 13 || age > 100) errors.age = 'Enter an age between 13 and 100';
+      if (!d.gender) errors.gender = 'Choose a gender';
+      if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) errors.email = 'Enter a valid email address';
+    }
+    if (step === 2) {
+      const h = Number(d.height_cm);
+      if (!Number.isFinite(h) || h < 100 || h > 250) errors.height_cm = 'Enter a height between 100 and 250 cm';
+      const wgt = Number(d.weight_kg);
+      if (!Number.isFinite(wgt) || wgt < 30 || wgt > 300) errors.weight_kg = 'Enter a weight between 30 and 300 kg';
+      if (!d.activity_level) errors.activity_level = 'Choose an activity level';
+    }
+    if (step === 3) {
+      if (!d.goal_type) errors.goal_type = 'Choose a goal';
+      if (d.goal_type === 'lose' || d.goal_type === 'gain') {
+        const t = Number(d.target_weight_kg);
+        if (!Number.isFinite(t) || t < 30 || t > 300) errors.target_weight_kg = 'Enter a target weight between 30 and 300 kg';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d.target_date || '')) errors.target_date = 'Choose a target date';
+        else {
+          const day = new Date(d.target_date + 'T00:00:00');
+          const tomorrow = new Date(); tomorrow.setHours(0, 0, 0, 0); tomorrow.setDate(tomorrow.getDate() + 1);
+          if (Number.isNaN(day.getTime()) || day < tomorrow) errors.target_date = 'Choose a date in the future';
+        }
+      }
+    }
+    return errors;
+  }
+
+  function wizardHtml() {
+    const w = state.wiz;
+    const stepTitles = ['About you', 'Body and activity', 'Your goal', 'Your plan'];
+
+    const stepsBar = '<div class="mb-6">'
+      + '<div class="flex gap-1.5 mb-2">'
+      + [1, 2, 3, 4].map((s) =>
+          '<span class="h-1.5 flex-1 rounded-full ' + (s <= w.step ? 'bg-primary-600' : 'bg-zinc-200 dark:bg-zinc-800') + '"></span>').join('')
+      + '</div>'
+      + '<p class="text-sm text-zinc-500">Step ' + w.step + ' of 4 · ' + esc(stepTitles[w.step - 1]) + '</p>'
+      + '</div>';
+
+    let body = '';
+    const errorSummary = w.serverError
+      ? '<div class="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 mb-4 text-sm text-red-700 dark:text-red-300">' + esc(w.serverError) + '</div>'
+      : '';
+
+    if (w.step === 1) {
+      body =
+        field('Name', textInput('name', 'type="text" autocomplete="name" maxlength="100" placeholder="Your name"', w.data.name), w.errors.name)
+        + field('Age', textInput('age', 'type="number" inputmode="numeric" min="13" max="100" placeholder="Years"', w.data.age), w.errors.age)
+        + '<div class="mb-4"><span class="block text-sm font-medium mb-1.5">Gender</span>'
+        + optionGroup('gender', GENDER_OPTIONS, w.data.gender, false)
+        + (w.errors.gender ? '<span class="block text-sm text-red-600 dark:text-red-400 mt-1">' + esc(w.errors.gender) + '</span>' : '')
+        + '</div>'
+        + field('Email <span class="font-normal text-zinc-500">(optional)</span>', textInput('email', 'type="email" autocomplete="email" placeholder="you@example.com"', w.data.email), w.errors.email);
     }
 
-    document.getElementById('press-btn').addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/press', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
-        });
-        if (res.ok) loadLeaderboard();
-        else if (res.status === 401) document.getElementById('count').textContent = 'Sign in to press!';
-      } catch {}
-    });
+    if (w.step === 2) {
+      body =
+        field('Height (cm)', textInput('height_cm', 'type="number" inputmode="decimal" min="100" max="250" step="0.1" placeholder="cm"', w.data.height_cm), w.errors.height_cm)
+        + field('Weight (kg)', textInput('weight_kg', 'type="number" inputmode="decimal" min="30" max="300" step="0.1" placeholder="kg"', w.data.weight_kg), w.errors.weight_kg)
+        + '<div class="mb-1"><span class="block text-sm font-medium mb-1.5">Activity level</span>'
+        + optionGroup('activity_level', ACTIVITY_OPTIONS, w.data.activity_level, true)
+        + (w.errors.activity_level ? '<span class="block text-sm text-red-600 dark:text-red-400 mt-1">' + esc(w.errors.activity_level) + '</span>' : '')
+        + '</div>';
+    }
 
-    loadLeaderboard();
+    if (w.step === 3) {
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      const minDate = tomorrow.getFullYear() + '-' + String(tomorrow.getMonth() + 1).padStart(2, '0') + '-' + String(tomorrow.getDate()).padStart(2, '0');
+      const needsTarget = w.data.goal_type === 'lose' || w.data.goal_type === 'gain';
+      body =
+        '<div class="mb-4"><span class="block text-sm font-medium mb-1.5">Goal</span>'
+        + optionGroup('goal_type', GOAL_OPTIONS, w.data.goal_type, true)
+        + (w.errors.goal_type ? '<span class="block text-sm text-red-600 dark:text-red-400 mt-1">' + esc(w.errors.goal_type) + '</span>' : '')
+        + '</div>'
+        + '<div id="goal-target-fields"' + (needsTarget ? '' : ' class="hidden"') + '>'
+        + field('Target weight (kg)', textInput('target_weight_kg', 'type="number" inputmode="decimal" min="30" max="300" step="0.1" placeholder="kg"', w.data.target_weight_kg), w.errors.target_weight_kg)
+        + field('Target date', textInput('target_date', 'type="date" min="' + minDate + '"', w.data.target_date), w.errors.target_date)
+        + '</div>';
+    }
+
+    if (w.step === 4) {
+      const t = computeTargets(w.data, { goal_type: w.data.goal_type || 'maintain' });
+      const needsTarget = w.data.goal_type === 'lose' || w.data.goal_type === 'gain';
+      body =
+        '<dl class="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden mb-4">'
+        + planRow('BMI', t.bmi + ' · ' + t.bmiCategory)
+        + planRow('BMR', t.bmr + ' kcal')
+        + planRow('Daily burn (TDEE)', t.tdee + ' kcal')
+        + planRow('Calorie target', t.calorieTarget + ' kcal' + (t.calorieFloorApplied ? ' <span class="text-xs text-zinc-500">(kept at 1200 for safety)</span>' : ''))
+        + planRow('Protein', t.proteinGrams + ' g (' + t.macroSplit.protein + '%)')
+        + planRow('Carbs', t.carbsGrams + ' g (' + t.macroSplit.carbs + '%)')
+        + planRow('Fat', t.fatGrams + ' g (' + t.macroSplit.fat + '%)')
+        + planRow('Water', (t.waterTargetMl / 1000).toFixed(1) + ' L per day')
+        + (needsTarget ? planRow('Target weight', esc(w.data.target_weight_kg) + ' kg') : '')
+        + (needsTarget ? planRow('Target date', esc(w.data.target_date)) : '')
+        + '</dl>'
+        + '<p class="text-xs text-zinc-500">These numbers are estimates from the Mifflin-St Jeor formula. You can change your plan any time.</p>';
+    }
+
+    const primaryLabel = w.step < 4 ? 'Continue' : (w.editing ? 'Save my plan' : 'Start my plan');
+    const actions =
+      '<div class="flex gap-3 mt-6">'
+      + (w.step > 1 ? '<button type="button" data-action="wiz-back" class="min-h-[44px] px-5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Back</button>' : '')
+      + '<button type="submit" ' + (w.saving ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
+      + (w.saving ? 'Saving…' : primaryLabel) + '</button>'
+      + '</div>';
+
+    return '<div id="wizard" class="max-w-md mx-auto py-2">'
+      + '<div class="text-center mb-6">'
+      + '<span class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-lg">'
+      + '<svg viewBox="0 0 100 100" class="w-6 h-6" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="currentColor"/><circle cx="50" cy="50" r="18" fill="white"/></svg>'
+      + 'My Fitness</span>'
+      + '<h1 class="text-xl font-bold mt-2">' + (w.editing ? 'Edit your plan' : 'Set up your plan') + '</h1>'
+      + '</div>'
+      + card(stepsBar + '<form id="wizard-form" novalidate>' + errorSummary + body + actions + '</form>')
+      + '</div>';
+  }
+
+  function planRow(term, value) {
+    return '<div class="flex items-baseline justify-between gap-3 px-4 py-2.5">'
+      + '<dt class="text-sm text-zinc-500">' + term + '</dt>'
+      + '<dd class="text-sm font-semibold text-right">' + value + '</dd>'
+      + '</div>';
+  }
+
+  function readWizardForm() {
+    const w = state.wiz;
+    const form = document.getElementById('wizard-form');
+    if (!form) return;
+    const d = w.data;
+    ['name', 'age', 'gender', 'email', 'height_cm', 'weight_kg', 'activity_level', 'goal_type', 'target_weight_kg', 'target_date'].forEach((k) => {
+      const el = form.querySelector('[name="' + k + '"]');
+      if (el) {
+        if (el.type === 'radio') {
+          const checked = form.querySelector('[name="' + k + '"]:checked');
+          if (checked) d[k] = checked.value;
+        } else {
+          d[k] = el.value;
+        }
+      }
+    });
+  }
+
+  function onWizardSubmit(event) {
+    event.preventDefault();
+    const w = state.wiz;
+    readWizardForm();
+    if (w.step < 4) {
+      const errors = validateStep(w.step, w.data);
+      w.errors = errors;
+      if (Object.keys(errors).length) { render(); return; }
+      w.step += 1;
+      w.serverError = null;
+      w.errors = {};
+      render();
+      return;
+    }
+    // Final step: save. The server revalidates; its values are the truth.
+    w.saving = true;
+    w.serverError = null;
+    w.errors = {};
+    render();
+    api('/api/profile', { method: 'POST', body: w.data })
+      .then((data) => {
+        state.onboarded = true;
+        state.demo = !!data.demo;
+        state.profile = data.profile;
+        state.goal = data.goal;
+        state.targets = data.targets;
+        state.wiz = null;
+        state.view = 'dashboard';
+        if (location.hash === '#profile') {
+          history.replaceState(null, '', location.pathname + location.search + '#dashboard');
+        }
+        loadDashboard();
+      })
+      .catch((err) => {
+        w.saving = false;
+        if (err.status === 400 && err.data && err.data.errors) {
+          w.errors = err.data.errors;
+          // Jump back to the first step that owns a reported error.
+          const owners = { name: 1, age: 1, gender: 1, email: 1, height_cm: 2, weight_kg: 2, activity_level: 2, goal_type: 3, target_weight_kg: 3, target_date: 3 };
+          for (const k of Object.keys(err.data.errors)) { w.step = owners[k] || 1; break; }
+        } else {
+          w.serverError = err.message || 'Could not save your plan';
+        }
+        render();
+      });
+  }
+
+  function onWizardInput(event) {
+    const target = event.target;
+    if (!target || !target.name) return;
+    const w = state.wiz;
+    if (target.type === 'radio' && target.name === 'goal_type') {
+      // Choosing Lose or Gain grows the step to include target fields; a
+      // targeted toggle keeps the DOM (and any focus) stable.
+      readWizardForm();
+      const panel = document.getElementById('goal-target-fields');
+      if (panel) {
+        const needs = w.data.goal_type === 'lose' || w.data.goal_type === 'gain';
+        panel.classList.toggle('hidden', !needs);
+      }
+      return;
+    }
+    if (w && w.errors[target.name]) {
+      delete w.errors[target.name];
+      const wrap = target.closest('label') || target.closest('div');
+      if (wrap) {
+        const msg = wrap.querySelector('.text-red-600');
+        if (msg) msg.remove();
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Dashboard
+  // ---------------------------------------------------------------------
+
+  function loadDashboard() {
+    state.dashLoading = true;
+    state.dashError = null;
+    render();
+    api('/api/dashboard')
+      .then((data) => {
+        state.day = data.date;
+        state.profile = data.profile;
+        state.goal = data.goal;
+        state.targets = data.targets;
+        state.meals = data.meals;
+        state.water = data.water;
+        state.daysToTarget = data.daysToTarget;
+        state.demo = !!data.demo || state.demo;
+        state.dashLoading = false;
+        render();
+      })
+      .catch((err) => {
+        state.dashLoading = false;
+        if (err.status === 409) {
+          openWizard(false);
+          return;
+        }
+        state.dashError = err.message || 'Could not load today’s data';
+        render();
+      });
+  }
+
+  function ringSvg(consumed, target) {
+    const R = 70;
+    const C = 2 * Math.PI * R;
+    const frac = target > 0 ? Math.min(consumed / target, 1) : 0;
+    const over = target > 0 && consumed > target;
+    const strokeClass = over ? 'stroke-accent-500' : 'stroke-primary-500';
+    const left = Math.max(0, Math.round(target - consumed));
+    return '<div id="calorie-ring" class="relative w-44 h-44 shrink-0" role="img" aria-label="'
+      + esc(consumed + ' of ' + target + ' calories consumed') + '">'
+      + '<svg viewBox="0 0 180 180" class="w-44 h-44 -rotate-90">'
+      + '<circle cx="90" cy="90" r="' + R + '" fill="none" stroke-width="14" class="stroke-zinc-200 dark:stroke-zinc-800"/>'
+      + '<circle cx="90" cy="90" r="' + R + '" fill="none" stroke-width="14" stroke-linecap="round" class="' + strokeClass
+      + '" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - frac)).toFixed(1) + '"/>'
+      + '</svg>'
+      + '<div class="absolute inset-0 flex flex-col items-center justify-center text-center">'
+      + '<span class="text-3xl font-bold tabular-nums">' + left.toLocaleString() + '</span>'
+      + '<span class="text-xs text-zinc-500">Calories left</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function macroBar(label, consumed, target, barClass) {
+    const frac = target > 0 ? Math.min(consumed / target, 1) : 0;
+    return '<div>'
+      + '<div class="flex justify-between text-xs mb-1"><span class="text-zinc-500">' + esc(label) + '</span>'
+      + '<span class="tabular-nums text-zinc-500">' + Math.round(consumed) + ' / ' + Math.round(target) + ' g</span></div>'
+      + '<div class="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">'
+      + '<div class="h-full rounded-full ' + barClass + '" style="width:' + (frac * 100).toFixed(1) + '%"></div>'
+      + '</div></div>';
+  }
+
+  function calorieCard() {
+    const t = state.targets;
+    const consumed = state.meals.totals.calories;
+    const inner =
+      cardTitle('Calories', 'Calorie target ' + t.calorieTarget.toLocaleString() + ' kcal')
+      + '<div class="flex flex-col sm:flex-row items-center gap-6">'
+      + ringSvg(consumed, t.calorieTarget)
+      + '<div class="flex-1 w-full space-y-3">'
+      + macroBar('Protein', state.meals.totals.protein_g, t.proteinGrams, 'bg-primary-500')
+      + macroBar('Carbs', state.meals.totals.carbs_g, t.carbsGrams, 'bg-accent-400')
+      + macroBar('Fat', state.meals.totals.fat_g, t.fatGrams, 'bg-accent-500')
+      + '</div></div>'
+      + (state.meals.count === 0
+        ? '<p class="text-sm text-zinc-500 mt-4">No meals logged yet. Food logging is coming in a later update.</p>'
+        : '');
+    return card(inner, 'md:col-span-2');
+  }
+
+  function mealsCard() {
+    const m = state.meals;
+    let rows = '';
+    for (const key of ['breakfast', 'lunch', 'dinner', 'snack']) {
+      const entries = m.groups[key] || [];
+      if (!entries.length) continue;
+      rows += '<div class="mt-3 first:mt-0">'
+        + '<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">' + MEAL_LABELS[key] + '</p>'
+        + entries.map((e) =>
+          '<div class="flex items-baseline justify-between gap-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 last:border-0">'
+          + '<span class="text-sm">' + esc(e.name) + '</span>'
+          + '<span class="text-sm tabular-nums text-zinc-500">' + Math.round(Number(e.calories)) + ' kcal · P'
+          + Math.round(Number(e.protein_g)) + ' C' + Math.round(Number(e.carbs_g)) + ' F' + Math.round(Number(e.fat_g)) + '</span>'
+          + '</div>').join('')
+        + '</div>';
+    }
+    const inner = cardTitle('Today’s meals', m.count + (m.count === 1 ? ' item' : ' items'))
+      + (m.count === 0
+        ? '<div class="py-6 text-center"><p class="text-sm font-medium">No meals logged yet</p>'
+          + '<p class="text-sm text-zinc-500 mt-1">Food logging is coming in a later update.</p></div>'
+        : rows);
+    return card(inner);
+  }
+
+  function glassIcon(filled) {
+    return '<svg viewBox="0 0 24 24" class="w-6 h-6 ' + (filled ? 'text-primary-500' : 'text-zinc-300 dark:text-zinc-700') + '" fill="currentColor" aria-hidden="true">'
+      + '<path d="M6 3h12l-1.2 17a2 2 0 0 1-2 1.8H9.2a2 2 0 0 1-2-1.8L6 3Zm2.6 4 .8 12h6.2l.8-12H8.6Z"/></svg>';
+  }
+
+  function waterCard() {
+    const w = state.water;
+    const targetGlasses = Math.ceil(w.targetMl / w.glassMl);
+    const iconCount = Math.min(targetGlasses, 12);
+    const pct = Math.min(100, Math.round((w.ml / w.targetMl) * 100));
+    const inner =
+      cardTitle('Water', 'Target ' + (w.targetMl / 1000).toFixed(1) + ' L')
+      + '<div class="flex items-center justify-between gap-3 mb-3">'
+      + '<div><p class="text-2xl font-bold tabular-nums">' + w.glasses + ' <span class="text-sm font-medium text-zinc-500">of ' + targetGlasses + ' glasses</span></p>'
+      + '<p class="text-sm text-zinc-500 tabular-nums">' + w.ml + ' of ' + w.targetMl + ' ml · ' + pct + '%</p></div>'
+      + iconWater.replace('w-5 h-5', 'w-8 h-8 text-primary-500')
+      + '</div>'
+      + '<div class="flex flex-wrap gap-1.5 mb-4" aria-hidden="true">'
+      + Array.from({ length: iconCount }, (_, i) => glassIcon(i < w.glasses)).join('')
+      + '</div>'
+      + (state.waterError ? '<p class="text-sm text-red-600 dark:text-red-400 mb-2">' + esc(state.waterError) + '</p>' : '')
+      + '<div class="flex gap-3">'
+      + '<button data-action="water-add" ' + (state.waterPending ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold transition-colors disabled:opacity-60">+1 glass</button>'
+      + '<button data-action="water-remove" ' + (state.waterPending || w.glasses === 0 ? 'disabled' : '') + ' aria-label="Remove one glass" class="min-h-[44px] min-w-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">−1</button>'
+      + '</div>';
+    return card(inner);
+  }
+
+  function statTile(label, value) {
+    return '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 px-4 py-3">'
+      + '<p class="text-xs text-zinc-500">' + esc(label) + '</p>'
+      + '<p class="text-sm font-semibold mt-0.5">' + value + '</p></div>';
+  }
+
+  function planCard() {
+    const t = state.targets;
+    const p = state.profile;
+    const g = state.goal;
+    const goalLabel = { lose: 'Lose weight', maintain: 'Maintain weight', gain: 'Gain weight' }[g.goal_type] || g.goal_type;
+    const needsTarget = g.goal_type === 'lose' || g.goal_type === 'gain';
+    const inner =
+      cardTitle('Your plan')
+      + '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">'
+      + statTile('Current weight', Number(p.weight_kg).toFixed(1) + ' kg')
+      + statTile('Goal', esc(goalLabel))
+      + (needsTarget ? statTile('Target weight', Number(g.target_weight_kg).toFixed(1) + ' kg') : '')
+      + (needsTarget && g.target_date
+        ? statTile('Target date', esc(g.target_date) + (state.daysToTarget != null ? ' · ' + state.daysToTarget + ' days left' : ''))
+        : '')
+      + statTile('BMI', t.bmi + ' · ' + t.bmiCategory)
+      + statTile('BMR', t.bmr.toLocaleString() + ' kcal')
+      + statTile('Daily burn (TDEE)', t.tdee.toLocaleString() + ' kcal')
+      + '</div>';
+    return card(inner, 'md:col-span-2');
+  }
+
+  function dashboardHtml() {
+    const p = state.profile;
+    const hour = new Date().getHours();
+    const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+    let body;
+    if (state.dashError) {
+      body = '<div class="md:col-span-2">' + errorBox(state.dashError, 'Try again') + '</div>';
+    } else if (!state.meals) {
+      // First load: skeleton cards while today's data is in flight.
+      body =
+        card('<div class="animate-pulse space-y-4"><div class="h-44 w-44 rounded-full bg-zinc-200 dark:bg-zinc-800 mx-auto"></div><div class="h-3 rounded bg-zinc-200 dark:bg-zinc-800"></div><div class="h-3 rounded bg-zinc-200 dark:bg-zinc-800 w-2/3"></div></div>', 'md:col-span-2')
+        + card('<div class="animate-pulse h-24 rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>')
+        + card('<div class="animate-pulse h-24 rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>');
+    } else {
+      body = calorieCard() + mealsCard() + waterCard() + planCard();
+    }
+
+    return '<div class="grid gap-4 md:grid-cols-2">'
+      + '<div class="md:col-span-2 flex flex-wrap items-center justify-between gap-2">'
+      + '<div><h1 class="text-xl font-bold">' + part + ', ' + esc(p.name.split(' ')[0]) + '</h1>'
+      + '<p class="text-sm text-zinc-500">' + esc(dateLabel) + '</p></div>'
+      + (state.demo ? '<span class="rounded-full bg-accent-500/15 text-accent-600 dark:text-accent-400 text-xs font-semibold px-3 py-1">Staging demo data</span>' : '')
+      + '</div>'
+      + body
+      + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Shell: sidebar on desktop, bottom nav on mobile
+  // ---------------------------------------------------------------------
+
+  function navButton(view, label, icon, active) {
+    return '<button data-nav="' + view + '" aria-current="' + (active ? 'page' : 'false') + '" class="flex items-center gap-3 min-h-[44px] w-full px-4 rounded-xl text-sm font-semibold transition-colors '
+      + (active
+        ? 'bg-primary-600/10 text-primary-700 dark:text-primary-400'
+        : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100')
+      + '">' + icon + '<span>' + label + '</span></button>';
+  }
+
+  function shell(inner) {
+    // The nav exists once a plan does; first-run onboarding is a focused
+    // full-screen flow with no dashboard to visit yet.
+    if (!state.onboarded) {
+      return '<div class="min-h-screen"><main class="max-w-3xl mx-auto w-full px-4 pt-6 pb-10">' + inner + '</main></div>';
+    }
+    const active = state.view === 'wizard' && state.wiz && state.wiz.editing ? 'profile' : 'dashboard';
+    return '<div class="min-h-screen lg:flex">'
+      + '<aside class="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col gap-2 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">'
+      + '<div class="flex items-center gap-2 px-2 py-3 text-primary-600 dark:text-primary-400 font-bold text-lg">'
+      + '<svg viewBox="0 0 100 100" class="w-6 h-6" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="currentColor"/><circle cx="50" cy="50" r="18" fill="white"/></svg>'
+      + 'My Fitness</div>'
+      + '<nav aria-label="Main">' + navButton('dashboard', 'Dashboard', iconDashboard, active === 'dashboard')
+      + navButton('profile', 'Profile', iconProfile, active === 'profile') + '</nav>'
+      + (state.targets ? '<div class="mt-auto rounded-xl bg-zinc-100 dark:bg-zinc-800/60 px-4 py-3 text-sm">'
+        + '<p class="text-xs text-zinc-500">Calorie target</p>'
+        + '<p class="font-semibold tabular-nums">' + state.targets.calorieTarget.toLocaleString() + ' kcal / day</p></div>' : '')
+      + '</aside>'
+      + '<div class="flex-1 lg:pl-60"><main class="max-w-3xl mx-auto w-full px-4 pt-6 pb-28 lg:pb-10">' + inner + '</main></div>'
+      + '<nav aria-label="Main" class="lg:hidden fixed bottom-0 inset-x-0 z-10 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur" style="padding-bottom:var(--un-safe-inset-bottom, env(safe-area-inset-bottom, 0px))">'
+      + '<div class="grid grid-cols-2 max-w-md mx-auto">'
+      + '<button data-nav="dashboard" aria-current="' + (active === 'dashboard' ? 'page' : 'false') + '" class="flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ' + (active === 'dashboard' ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-500') + '">' + iconDashboard + 'Dashboard</button>'
+      + '<button data-nav="profile" aria-current="' + (active === 'profile' ? 'page' : 'false') + '" class="flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ' + (active === 'profile' ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-500') + '">' + iconProfile + 'Profile</button>'
+      + '</div></nav>'
+      + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Render + events
+  // ---------------------------------------------------------------------
+
+  function render() {
+    if (state.view === 'loading') {
+      appEl.innerHTML = '<div class="min-h-screen flex items-center justify-center">'
+        + '<svg viewBox="0 0 24 24" class="w-8 h-8 animate-spin text-primary-600" fill="none" stroke="currentColor" stroke-width="2" aria-label="Loading"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg></div>';
+      return;
+    }
+    if (state.view === 'signedout') {
+      appEl.innerHTML = '<div class="min-h-screen flex items-center justify-center px-4">'
+        + '<div class="max-w-sm text-center"><h1 class="text-xl font-bold mb-2">Sign in required</h1>'
+        + '<p class="text-sm text-zinc-500">Open My Fitness from Homeroom so we know who you are.</p></div></div>';
+      return;
+    }
+    if (state.view === 'bootError') {
+      appEl.innerHTML = '<div class="min-h-screen flex items-center justify-center px-4">'
+        + '<div class="max-w-sm text-center w-full">' + errorBox(state.bootError || 'Something went wrong', 'Try again') + '</div></div>';
+      return;
+    }
+    if (state.view === 'wizard') {
+      appEl.innerHTML = shell(wizardHtml());
+      const form = document.getElementById('wizard-form');
+      if (form) {
+        form.addEventListener('submit', onWizardSubmit);
+        form.addEventListener('input', onWizardInput);
+        form.addEventListener('change', onWizardInput);
+      }
+      return;
+    }
+    // dashboard
+    appEl.innerHTML = shell(dashboardHtml());
+  }
+
+  appEl.addEventListener('click', (event) => {
+    const nav = event.target.closest('[data-nav]');
+    if (nav) {
+      const target = nav.getAttribute('data-nav');
+      if (target === 'profile') {
+        location.hash = '#profile';
+      } else if (location.hash === '#profile') {
+        location.hash = '#dashboard';
+      } else if (state.onboarded) {
+        state.view = 'dashboard';
+        render();
+        loadDashboard();
+      }
+      return;
+    }
+    const action = event.target.closest('[data-action]');
+    if (!action) return;
+    const kind = action.getAttribute('data-action');
+    if (kind === 'retry') {
+      if (state.bootError) { delete state.bootError; state.view = 'loading'; render(); boot(); }
+      else loadDashboard();
+      return;
+    }
+    if (kind === 'wiz-back') {
+      const w = state.wiz;
+      if (w && w.step > 1) { w.step -= 1; w.serverError = null; w.errors = {}; render(); }
+      else if (w && state.onboarded) { location.hash = '#dashboard'; }
+      return;
+    }
+    if (kind === 'water-add' || kind === 'water-remove') {
+      if (state.waterPending) return;
+      state.waterPending = true;
+      state.waterError = null;
+      render();
+      api('/api/water', { method: 'POST', body: { delta: kind === 'water-add' ? 1 : -1 } })
+        .then((data) => {
+          state.water = Object.assign({}, state.water, data);
+          state.waterPending = false;
+          render();
+        })
+        .catch((err) => {
+          state.waterPending = false;
+          state.waterError = err.message || 'Could not save your water log';
+          render();
+        });
+    }
+  });
+
+  boot();
   </script>
 </body>
 </html>
