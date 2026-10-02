@@ -1,27 +1,54 @@
 # My Fitness
 
-> **Starter template** — this repo was scaffolded by Homeroom Social
-> Vibecoding. Everything in it is placeholder example code until the
-> app's first real feature is built.
+A diet and nutrition program web app on [Homeroom](https://app.onhomeroom.com):
+it turns your body stats and goal into an automatic daily plan (calories,
+macros, water) and tracks how today is going against it.
 
-The scaffold is a small working demo that proves the plumbing works:
+## What works today (phase 1)
 
-- **Sign-in** — the server verifies the platform-issued user token
-  (an RS256 JWT) on every request, so the app already knows who is
-  using it. No accounts to build.
-- **Database** — the app has its own private Postgres database; the
-  demo stores button presses in a `presses` table.
-- **Live API** — two example routes (`/api/press`,
-  `/api/leaderboard`) read and write through a real Express server.
-- **Styling** — Tailwind CSS, precompiled by `npm run build` during
-  image creation with either Kubernetes/Paketo or standalone Docker.
+- **Sign-in** happens through Homeroom itself. Open the app from the shell and
+  you are already signed in; the app never sees or stores a password. Direct
+  visits outside the shell are refused.
+- **Onboarding wizard** collects name, age, gender, height, weight and activity
+  level, then your goal (lose / maintain / gain, with target weight and date)
+  and shows the computed plan before saving.
+- **Automatic targets**, computed server-side with the Mifflin-St Jeor formula:
+  BMI (with category), BMR, TDEE (daily burn), a daily calorie target adjusted
+  for your goal (floored at 1200 kcal for safety), goal-adjusted protein/carb/
+  fat targets, and a daily water target of roughly 35 ml per kg of body weight.
+- **Dashboard** with a calorie progress ring, today's meals summary (populated
+  by food logging, arriving in a later phase), a water tracker with a +1 glass
+  control, and your plan facts. Mobile-first: bottom navigation on phones,
+  a sidebar on desktop, from 320 px up.
+- **Your data is real**: everything is stored in the app's own PostgreSQL
+  database, scoped to your platform user id. Error states show real errors;
+  there is no demo or mock mode in the product.
 
-## Replacing the template
+## Running locally
 
-Open the app on Homeroom, tap the Homeroom icon in the header, choose
-**Start a new change**, and describe the app you want in plain English.
-The template will be replaced with your real app. You can also run
-Claude Code against this repo directly; start with `CLAUDE.md`, which
-carries the app-specific notes and points at the platform rules.
+```sh
+npm ci --include=dev
+npm run build          # compiles public/tailwind.css
+DATABASE_URL=postgres://... node server.js
+```
 
-Once the real app exists, rewrite this README to describe it.
+`DATABASE_URL`, `PORT`, `USERNODE_JWT_PUBLIC_KEY`, `USERNODE_APP_ID` and
+`USERNODE_ENV` are injected by the platform at runtime; the app needs no extra
+secrets and calls no third-party APIs in this phase (later phases add USDA
+FoodData Central, Open Food Facts, recipe and LLM integrations via the
+platform's proxy).
+
+## Project layout
+
+- `server.js` — Express app: platform JWT auth, schema migration, JSON API.
+- `calculations.js` — the health math (BMI/BMR/TDEE/macros/water) and
+  server-side validation, shared by every route.
+- `public/index.html` — the whole frontend (vanilla JS + precompiled Tailwind).
+- `dapp.json` — platform manifest and the proposal checks ("CI") that run
+  against every staging build.
+
+## Roadmap
+
+Food tracking against a global food database, meal plans and recipes,
+progress tracking with charts, AI features (via the platform LLM proxy),
+push notifications, PWA, exports and i18n.

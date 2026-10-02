@@ -88,11 +88,22 @@ tables you've marked private), etc.
 
 ## About My Fitness
 
-_(add a sentence or two of product context here so Claude Code has a
-shared understanding of what this app is for)_
+A diet and nutrition web app. Users set up a profile and goal in an onboarding
+wizard; the app computes BMI, BMR (Mifflin-St Jeor), TDEE, a goal-adjusted
+daily calorie target with macro splits, and a water target, then tracks today
+against the plan on a dashboard (calorie ring, meals summary, water).
+Authentication is the platform's iframe-token auth; the app never handles
+passwords. Later phases add a global food database (USDA FoodData Central +
+Open Food Facts), meal planning, progress tracking and AI features through the
+platform's LLM proxy.
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- All four health tables (`profiles`, `goals`, `meal_logs`, `water_logs`) hold
+  personal health data and are marked `staging:private` — never remove those
+  comments, and never seed rows into them for the visiting user.
+- The health math lives only in `calculations.js`; the frontend mirrors it for
+  the wizard preview, but server values are authoritative. Change formulas in
+  one place only.
+- Brand colors: Tailwind `primary` (green) and `accent` (orange), defined in
+  `tailwind.config.js`. Use those tokens, not raw green-/orange- classes.
