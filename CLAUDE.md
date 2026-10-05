@@ -90,20 +90,36 @@ tables you've marked private), etc.
 
 A diet and nutrition web app. Users set up a profile and goal in an onboarding
 wizard; the app computes BMI, BMR (Mifflin-St Jeor), TDEE, a goal-adjusted
-daily calorie target with macro splits, and a water target, then tracks today
-against the plan on a dashboard (calorie ring, meals summary, water).
+daily calorie target with macro splits, and a water target, then tracks what
+they eat and drink against the plan. Meals are logged from a global food
+database (Open Food Facts + USDA FoodData Central) or from custom foods, with
+barcode lookup, favorites, recents, and daily/weekly/monthly history.
 Authentication is the platform's iframe-token auth; the app never handles
-passwords. Later phases add a global food database (USDA FoodData Central +
-Open Food Facts), meal planning, progress tracking and AI features through the
-platform's LLM proxy.
+passwords. Later phases add meal planning, progress tracking and AI features
+through the platform's LLM proxy.
 
 ## App-specific conventions
 
-- All four health tables (`profiles`, `goals`, `meal_logs`, `water_logs`) hold
-  personal health data and are marked `staging:private` — never remove those
-  comments, and never seed rows into them for the visiting user.
+- Six tables hold personal data and are marked `staging:private` — never remove
+  those comments, and never seed rows into them for the visiting user:
+  `profiles`, `goals`, `meal_logs`, `water_logs`, `custom_foods`, and
+  `food_favorites`. The shared `foods` cache is deliberately **public**: it
+  holds third-party reference data with no personal content and no FK to a
+  private table. Rows in it are shared across users, which is the point.
+- Private tables may hold foreign keys into the public `foods` table (the
+  platform rule only forbids a public table pointing at a private one).
 - The health math lives only in `calculations.js`; the frontend mirrors it for
   the wizard preview, but server values are authoritative. Change formulas in
   one place only.
+- The food-data module (`foods.js`) is the only place that talks to Open Food
+  Facts or USDA FoodData Central. It never fabricates food data: a source that
+  fails throws, and the caller turns that into a partial-source notice or an
+  error with Retry. Keep it that way — no mock or fallback rows.
+- `USDA_FDC_API_KEY` is optional and private, declared in `dapp.json`. No key
+  means the USDA layer is skipped and search degrades to Open Food Facts plus
+  the cache; that absence must never be an error.
+- The `camera` capability is declared in `dapp.json` for barcode scanning. The
+  scan button only appears when both the native `BarcodeDetector` and the
+  bridge capability are present, and the Barcode text field always works.
 - Brand colors: Tailwind `primary` (green) and `accent` (orange), defined in
   `tailwind.config.js`. Use those tokens, not raw green-/orange- classes.
