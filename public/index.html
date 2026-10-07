@@ -143,7 +143,7 @@
 
   const state = {
     booted: false,
-    view: 'loading',          // loading | wizard | dashboard | signedout | bootError
+    view: 'loading',          // loading | wizard | dashboard | log | add | signedout | bootError
     onboarded: false,
     profile: null,
     goal: null,
@@ -157,7 +157,15 @@
     dashLoading: false,
     waterPending: false,
     waterError: null,
+    mealError: null,
     wiz: null,                // wizard state, created on demand
+    log: { tab: 'today', hist: null, histRange: null, loading: false, error: null },
+    add: null,                // food search state, created on demand
+    detail: null,             // open detail sheet state
+    detailError: null,
+    detailSaving: false,
+    create: null,             // custom food form state
+    logToast: null,
   };
 
   // ---------------------------------------------------------------------
@@ -186,6 +194,8 @@
     { value: 'gain', label: 'Gain weight', hint: 'Build up gradually' },
   ];
   const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
+  const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+  const MEAL_OPTIONS = MEAL_ORDER.map((k) => ({ value: k, label: MEAL_LABELS[k] }));
 
   const CALORIE_FLOOR = 1200;
   const MACRO_SPLITS = {
@@ -231,11 +241,25 @@
   }
 
   // ---------------------------------------------------------------------
-  // Router (hash based: #dashboard default, #profile opens the wizard)
+  // Router (hash based: #dashboard default, #profile the wizard, #log the
+  // food log, #add the food search)
   // ---------------------------------------------------------------------
 
   function routeView() {
-    return location.hash === '#profile' ? 'wizard' : 'dashboard';
+    const h = location.hash;
+    if (h === '#profile') return 'wizard';
+    if (h === '#log' || h.indexOf('#log/') === 0) return 'log';
+    if (h === '#add') return 'add';
+    return 'dashboard';
+  }
+
+  // The Week and Month tabs are URL-reachable (#log/week, #log/month) so a
+  // shared link and the before/after shots land on the same tab.
+  function logTabFromHash() {
+    const h = location.hash;
+    if (h === '#log/week') return 'week';
+    if (h === '#log/month') return 'month';
+    return 'today';
   }
 
   window.addEventListener('hashchange', () => {
@@ -243,11 +267,15 @@
     const view = routeView();
     if (view === 'wizard') {
       openWizard(state.onboarded);
+    } else if (view === 'log') {
+      enterLog();
+    } else if (view === 'add') {
+      enterAdd();
     } else if (state.onboarded) {
       state.view = 'dashboard';
       state.wiz = null;
       render();
-      loadDashboard();
+      if (!state.meals) loadDashboard();
     }
   });
 
@@ -264,7 +292,10 @@
         state.profile = data.profile;
         state.goal = data.goal;
         state.targets = data.targets;
-        if (routeView() === 'wizard') openWizard(true);
+        const view = routeView();
+        if (view === 'wizard') openWizard(true);
+        else if (view === 'log') enterLog();
+        else if (view === 'add') enterAdd();
         else { state.view = 'dashboard'; render(); loadDashboard(); }
       } else {
         openWizard(false);
@@ -309,7 +340,11 @@
 
   const iconDashboard = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
   const iconProfile = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>';
+  const iconLog = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10"/></svg>';
   const iconWater = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3s6 7.2 6 11.4A6 6 0 0 1 6 14.4C6 10.2 12 3 12 3Z"/></svg>';
+  const iconStar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m12 3 2.7 5.6 6.1.8-4.4 4.2 1.1 6-5.5-2.9-5.5 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z"/></svg>';
+  const iconStarFilled = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m12 3 2.7 5.6 6.1.8-4.4 4.2 1.1 6-5.5-2.9-5.5 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z"/></svg>';
+  const iconBack = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg>';
 
   function card(inner, extraClass) {
     return '<section class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-5 '
@@ -328,6 +363,11 @@
       + '<span>' + esc(message) + '</span>'
       + '<button data-action="retry" class="shrink-0 min-h-[44px] px-4 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500 transition-colors">' + (retryLabel || 'Retry') + '</button>'
       + '</div>';
+  }
+
+  function noticeBox(message) {
+    return '<div class="rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">'
+      + esc(message) + '</div>';
   }
 
   function field(labelHtml, inputHtml, errorText) {
@@ -358,6 +398,15 @@
     return '<div class="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">'
       + options.map((o) => optionRow(group, o, o.value === selected, hints ? o.hint : null)).join('')
       + '</div>';
+  }
+
+  function primaryButton(action, label, extraClass, attrs) {
+    return '<button data-action="' + action + '" ' + (attrs || '') + ' class="min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60 '
+      + (extraClass || '') + '">' + label + '</button>';
+  }
+
+  function skeletonBlock() {
+    return card('<div class="animate-pulse space-y-3"><div class="h-3 rounded bg-zinc-200 dark:bg-zinc-800"></div><div class="h-3 rounded bg-zinc-200 dark:bg-zinc-800 w-2/3"></div><div class="h-3 rounded bg-zinc-200 dark:bg-zinc-800 w-1/2"></div></div>');
   }
 
   // ---------------------------------------------------------------------
@@ -395,6 +444,13 @@
       }
     }
     return errors;
+  }
+
+  function planRow(term, value) {
+    return '<div class="flex items-baseline justify-between gap-3 px-4 py-2.5">'
+      + '<dt class="text-sm text-zinc-500">' + term + '</dt>'
+      + '<dd class="text-sm font-semibold text-right">' + value + '</dd>'
+      + '</div>';
   }
 
   function wizardHtml() {
@@ -488,13 +544,6 @@
       + '</div>';
   }
 
-  function planRow(term, value) {
-    return '<div class="flex items-baseline justify-between gap-3 px-4 py-2.5">'
-      + '<dt class="text-sm text-zinc-500">' + term + '</dt>'
-      + '<dd class="text-sm font-semibold text-right">' + value + '</dd>'
-      + '</div>';
-  }
-
   function readWizardForm() {
     const w = state.wiz;
     const form = document.getElementById('wizard-form');
@@ -564,6 +613,7 @@
     const target = event.target;
     if (!target || !target.name) return;
     const w = state.wiz;
+    if (!w) return;
     if (target.type === 'radio' && target.name === 'goal_type') {
       // Choosing Lose or Gain grows the step to include target fields; a
       // targeted toggle keeps the DOM (and any focus) stable.
@@ -575,7 +625,7 @@
       }
       return;
     }
-    if (w && w.errors[target.name]) {
+    if (w.errors[target.name]) {
       delete w.errors[target.name];
       const wrap = target.closest('label') || target.closest('div');
       if (wrap) {
@@ -589,20 +639,24 @@
   // Dashboard
   // ---------------------------------------------------------------------
 
+  function applyDayPayload(data) {
+    state.day = data.date;
+    state.profile = data.profile;
+    state.goal = data.goal;
+    state.targets = data.targets;
+    state.meals = data.meals;
+    state.water = data.water;
+    state.daysToTarget = data.daysToTarget;
+    state.demo = !!data.demo || state.demo;
+  }
+
   function loadDashboard() {
     state.dashLoading = true;
     state.dashError = null;
     render();
     api('/api/dashboard')
       .then((data) => {
-        state.day = data.date;
-        state.profile = data.profile;
-        state.goal = data.goal;
-        state.targets = data.targets;
-        state.meals = data.meals;
-        state.water = data.water;
-        state.daysToTarget = data.daysToTarget;
-        state.demo = !!data.demo || state.demo;
+        applyDayPayload(data);
         state.dashLoading = false;
         render();
       })
@@ -659,34 +713,44 @@
       + macroBar('Protein', state.meals.totals.protein_g, t.proteinGrams, 'bg-primary-500')
       + macroBar('Carbs', state.meals.totals.carbs_g, t.carbsGrams, 'bg-accent-400')
       + macroBar('Fat', state.meals.totals.fat_g, t.fatGrams, 'bg-accent-500')
-      + '</div></div>'
-      + (state.meals.count === 0
-        ? '<p class="text-sm text-zinc-500 mt-4">No meals logged yet. Food logging is coming in a later update.</p>'
-        : '');
+      + '</div></div>';
     return card(inner, 'md:col-span-2');
+  }
+
+  function mealEntryRow(e, withRemove) {
+    return '<div class="flex items-baseline justify-between gap-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 last:border-0">'
+      + '<span class="text-sm">' + esc(e.name) + '</span>'
+      + '<span class="flex items-baseline gap-2 shrink-0">'
+      + '<span class="text-sm tabular-nums text-zinc-500">' + Math.round(Number(e.calories)) + ' kcal · P'
+      + Math.round(Number(e.protein_g)) + ' C' + Math.round(Number(e.carbs_g)) + ' F' + Math.round(Number(e.fat_g)) + '</span>'
+      + (withRemove
+        ? '<button data-action="meal-remove" data-id="' + esc(e.id) + '" aria-label="Remove ' + esc(e.name) + '" class="min-h-[44px] min-w-[44px] -my-2 inline-flex items-center justify-center rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors">×</button>'
+        : '')
+      + '</span></div>';
+  }
+
+  function mealGroupBlock(key, entries, addLabel) {
+    return '<div class="mt-3 first:mt-0">'
+      + '<div class="flex items-center justify-between gap-2">'
+      + '<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">' + MEAL_LABELS[key] + '</p>'
+      + '<button data-action="add-food" data-meal="' + key + '" class="min-h-[36px] px-3 rounded-lg text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/10 transition-colors">' + addLabel + '</button>'
+      + '</div>'
+      + (entries.length ? entries.map((e) => mealEntryRow(e, true)).join('')
+        : '<p class="text-sm text-zinc-400 py-1">Nothing logged</p>')
+      + '</div>';
   }
 
   function mealsCard() {
     const m = state.meals;
-    let rows = '';
-    for (const key of ['breakfast', 'lunch', 'dinner', 'snack']) {
-      const entries = m.groups[key] || [];
-      if (!entries.length) continue;
-      rows += '<div class="mt-3 first:mt-0">'
-        + '<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">' + MEAL_LABELS[key] + '</p>'
-        + entries.map((e) =>
-          '<div class="flex items-baseline justify-between gap-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 last:border-0">'
-          + '<span class="text-sm">' + esc(e.name) + '</span>'
-          + '<span class="text-sm tabular-nums text-zinc-500">' + Math.round(Number(e.calories)) + ' kcal · P'
-          + Math.round(Number(e.protein_g)) + ' C' + Math.round(Number(e.carbs_g)) + ' F' + Math.round(Number(e.fat_g)) + '</span>'
-          + '</div>').join('')
-        + '</div>';
-    }
-    const inner = cardTitle('Today’s meals', m.count + (m.count === 1 ? ' item' : ' items'))
+    const inner = '<div class="flex items-baseline justify-between gap-2 mb-4">'
+      + '<h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Today’s meals</h2>'
+      + '<span class="text-xs text-zinc-500">' + m.count + (m.count === 1 ? ' item' : ' items') + '</span>'
+      + '</div>'
       + (m.count === 0
-        ? '<div class="py-6 text-center"><p class="text-sm font-medium">No meals logged yet</p>'
-          + '<p class="text-sm text-zinc-500 mt-1">Food logging is coming in a later update.</p></div>'
-        : rows);
+        ? '<div class="py-4 text-center"><p class="text-sm font-medium">No meals logged yet</p>'
+          + '<p class="text-sm text-zinc-500 mt-1 mb-3">Log what you eat to track today against your plan.</p>'
+          + primaryButton('add-food', 'Add food', 'px-5', 'data-meal="breakfast"') + '</div>'
+        : MEAL_ORDER.map((key) => mealGroupBlock(key, m.groups[key] || [], '+ Add')).join(''));
     return card(inner);
   }
 
@@ -746,6 +810,10 @@
     return card(inner, 'md:col-span-2');
   }
 
+  function demoBadge() {
+    return state.demo ? '<span class="rounded-full bg-accent-500/15 text-accent-600 dark:text-accent-400 text-xs font-semibold px-3 py-1">Staging demo data</span>' : '';
+  }
+
   function dashboardHtml() {
     const p = state.profile;
     const hour = new Date().getHours();
@@ -753,6 +821,8 @@
     const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
     let body;
+    const mealErrorBanner = state.mealError
+      ? '<div class="md:col-span-2">' + errorBox(state.mealError, 'Dismiss') + '</div>' : '';
     if (state.dashError) {
       body = '<div class="md:col-span-2">' + errorBox(state.dashError, 'Try again') + '</div>';
     } else if (!state.meals) {
@@ -769,10 +839,649 @@
       + '<div class="md:col-span-2 flex flex-wrap items-center justify-between gap-2">'
       + '<div><h1 class="text-xl font-bold">' + part + ', ' + esc(p.name.split(' ')[0]) + '</h1>'
       + '<p class="text-sm text-zinc-500">' + esc(dateLabel) + '</p></div>'
-      + (state.demo ? '<span class="rounded-full bg-accent-500/15 text-accent-600 dark:text-accent-400 text-xs font-semibold px-3 py-1">Staging demo data</span>' : '')
+      + demoBadge()
       + '</div>'
+      + mealErrorBanner
       + body
       + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Food log view
+  // ---------------------------------------------------------------------
+
+  function enterLog() {
+    state.view = 'log';
+    const tab = logTabFromHash();
+    if (tab !== state.log.tab) { state.log.tab = tab; state.log.error = null; }
+    if (state.log.tab === 'today' && !state.meals) {
+      loadDayForLog();
+      return;
+    }
+    if (state.log.tab !== 'today' && (state.log.histRange !== state.log.tab || !state.log.hist)) {
+      loadHistory(state.log.tab);
+      return;
+    }
+    render();
+  }
+
+  function loadDayForLog() {
+    state.log.loading = true;
+    state.log.error = null;
+    render();
+    api('/api/history?range=day')
+      .then((data) => {
+        applyDayPayload(data);
+        state.log.loading = false;
+        render();
+      })
+      .catch((err) => {
+        state.log.loading = false;
+        state.log.error = err.message || 'Could not load today’s food log';
+        render();
+      });
+  }
+
+  function loadHistory(range) {
+    state.log.loading = true;
+    state.log.error = null;
+    render();
+    api('/api/history?range=' + range)
+      .then((data) => {
+        state.log.hist = data;
+        state.log.histRange = range;
+        state.log.loading = false;
+        render();
+      })
+      .catch((err) => {
+        state.log.loading = false;
+        state.log.error = err.message || 'Could not load your history';
+        render();
+      });
+  }
+
+  function logTabsHtml() {
+    const tabs = [['today', 'Today'], ['week', 'Week'], ['month', 'Month']];
+    return '<div class="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 mb-4">'
+      + tabs.map((t) =>
+        '<button data-action="log-tab" data-tab="' + t[0] + '" aria-current="' + (state.log.tab === t[0] ? 'page' : 'false')
+        + '" class="min-h-[44px] px-4 -mb-px text-sm font-semibold border-b-2 transition-colors '
+        + (state.log.tab === t[0]
+          ? 'border-primary-600 text-primary-700 dark:text-primary-400'
+          : 'border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100')
+        + '">' + t[1] + '</button>').join('')
+      + '</div>';
+  }
+
+  function logTodayHtml() {
+    const t = state.targets;
+    const mealErrorBanner = state.mealError ? '<div class="mb-4">' + errorBox(state.mealError, 'Dismiss') + '</div>' : '';
+    const totals = state.meals.totals;
+    const target = t.calorieTarget;
+    const over = totals.calories > target;
+    const summary = '<div class="flex flex-wrap gap-4">'
+      + '<div><p class="text-xs text-zinc-500">Calories</p>'
+      + '<p class="text-2xl font-bold tabular-nums ' + (over ? 'text-accent-600 dark:text-accent-400' : '') + '">' + Math.round(totals.calories).toLocaleString()
+      + ' <span class="text-sm font-medium text-zinc-500">of ' + target.toLocaleString() + '</span></p></div>'
+      + '<div class="text-xs text-zinc-500 self-end"><p>Protein ' + Math.round(totals.protein_g) + ' g</p>'
+      + '<p>Carbs ' + Math.round(totals.carbs_g) + ' g</p><p>Fat ' + Math.round(totals.fat_g) + ' g</p></div>'
+      + '</div>';
+
+    return mealErrorBanner
+      + card(summary + '<div id="log-meals" class="mt-3">'
+        + MEAL_ORDER.map((key) => mealGroupBlock(key, state.meals.groups[key] || [], '+ Add')).join('')
+        + '</div>', 'mb-4')
+      + waterCard();
+  }
+
+  function historyBar(calories, target) {
+    const frac = target > 0 ? Math.min(calories / target, 1) : 0;
+    const over = calories > target;
+    return '<div class="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden mt-1">'
+      + '<div class="h-full rounded-full ' + (over ? 'bg-accent-500' : 'bg-primary-500') + '" style="width:' + (frac * 100).toFixed(1) + '%"></div>'
+      + '</div>';
+  }
+
+  function formatDayLabel(dateStr, index, len) {
+    if (index === len - 1) return 'Today';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function historyHtml() {
+    const h = state.log.hist;
+    const t = h.target;
+    const targetGlasses = Math.ceil(t.water_target_ml / 250);
+    const list = h.days.map((day, i) =>
+      '<li class="py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0">'
+      + '<div class="flex items-baseline justify-between gap-3">'
+      + '<span class="text-sm font-medium">' + esc(formatDayLabel(day.date, i, h.days.length)) + '</span>'
+      + '<span class="text-sm tabular-nums text-zinc-500">' + Math.round(day.calories) + ' / ' + t.calorie_target.toLocaleString() + ' kcal</span>'
+      + '</div>'
+      + historyBar(day.calories, t.calorie_target)
+      + '<p class="text-xs text-zinc-500 mt-1">' + day.water_glasses + ' of ' + targetGlasses + ' glasses</p>'
+      + '</li>').join('');
+
+    const avg = h.averages;
+    const avgOver = avg.calories > t.calorie_target;
+    const summary = '<div id="log-history-summary" class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 mb-4">'
+      + '<div class="grid grid-cols-2 gap-3">'
+      + '<div><p class="text-xs text-zinc-500">Average calories</p>'
+      + '<p class="text-lg font-bold tabular-nums ' + (avgOver ? 'text-accent-600 dark:text-accent-400' : '') + '">' + Math.round(avg.calories).toLocaleString()
+      + ' <span class="text-xs font-medium text-zinc-500">of ' + t.calorie_target.toLocaleString() + '</span></p></div>'
+      + '<div><p class="text-xs text-zinc-500">Average water</p>'
+      + '<p class="text-lg font-bold tabular-nums">' + avg.water_glasses + ' <span class="text-xs font-medium text-zinc-500">of ' + targetGlasses + ' glasses</span></p></div>'
+      + '</div></div>';
+
+    return card(summary + '<ul id="log-history">' + list + '</ul>');
+  }
+
+  function logViewHtml() {
+    const header = '<div class="flex flex-wrap items-center justify-between gap-2 mb-4">'
+      + '<h1 class="text-xl font-bold">Food log</h1>' + demoBadge() + '</div>';
+
+    let body;
+    if (state.log.loading) body = skeletonBlock();
+    else if (state.log.error) body = errorBox(state.log.error, 'Retry');
+    else if (state.log.tab === 'today') body = state.meals ? logTodayHtml() : skeletonBlock();
+    else body = state.log.hist ? historyHtml() : skeletonBlock();
+
+    return '<div id="log-view">' + header + logTabsHtml() + body + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Add food: search, barcode, detail sheet, custom food form
+  // ---------------------------------------------------------------------
+
+  function freshAddState() {
+    return {
+      meal: 'breakfast',
+      origin: '#dashboard',
+      q: '',
+      results: null,       // null = not searched yet
+      sections: { recent: [], favorites: [], custom: [] },
+      notices: [],
+      loading: false,
+      error: null,
+      barcode: '',
+      barcodeBusy: false,
+      barcodeError: null,
+      scanBusy: false,
+      scanError: null,
+    };
+  }
+
+  function enterAdd() {
+    if (!state.add) state.add = freshAddState();
+    state.view = 'add';
+    state.detail = null;
+    state.create = null;
+    render();
+    if (!state.add.results && !state.add.loading) runSearch('');
+  }
+
+  function runSearch(q) {
+    const a = state.add;
+    a.q = q;
+    a.loading = true;
+    a.error = null;
+    render();
+    api('/api/foods/search?q=' + encodeURIComponent(q))
+      .then((data) => {
+        a.results = data.results || [];
+        a.sections = data.sections || { recent: [], favorites: [], custom: [] };
+        a.notices = data.notices || [];
+        a.loading = false;
+        render();
+      })
+      .catch((err) => {
+        a.loading = false;
+        a.error = err.message || 'Food search is unavailable right now. Please try again.';
+        render();
+      });
+  }
+
+  function sourceChip(food) {
+    const label = food.custom ? 'My food' : esc(food.source_label);
+    const cls = food.custom
+      ? 'bg-primary-600/10 text-primary-700 dark:text-primary-400'
+      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500';
+    return '<span class="rounded-full ' + cls + ' text-[11px] font-semibold px-2 py-0.5">' + label + '</span>';
+  }
+
+  function foodResultRow(food) {
+    return '<li class="flex items-stretch gap-2 border-b border-zinc-100 dark:border-zinc-800 last:border-0">'
+      + '<button data-action="food-open" data-key="' + esc(food.key) + '" class="flex-1 min-h-[64px] text-left py-3">'
+      + '<span class="flex items-baseline gap-2 flex-wrap">'
+      + '<span class="text-sm font-medium">' + esc(food.name) + '</span>'
+      + sourceChip(food)
+      + (food.recent ? '<span class="text-[11px] font-semibold text-zinc-400">Recent</span>' : '')
+      + '</span>'
+      + (food.brand ? '<span class="block text-xs text-zinc-500 mt-0.5">' + esc(food.brand) + '</span>' : '')
+      + '<span class="block text-xs text-zinc-500 mt-0.5">' + esc(food.serving_label) + ' · ' + Math.round(food.calories) + ' kcal</span>'
+      + '</button>'
+      + '<button data-action="fav-toggle" data-key="' + esc(food.key) + '" data-fav="' + (food.favorite ? '1' : '0') + '" data-favid="' + esc(food.favorite_id == null ? '' : food.favorite_id) + '" aria-label="' + (food.favorite ? 'Remove from favorites' : 'Add to favorites') + '" aria-pressed="' + (food.favorite ? 'true' : 'false') + '" class="min-w-[44px] inline-flex items-center justify-center rounded-lg transition-colors '
+      + (food.favorite ? 'text-accent-500 hover:bg-accent-500/10' : 'text-zinc-400 hover:text-accent-500 hover:bg-zinc-100 dark:hover:bg-zinc-800')
+      + '">' + (food.favorite ? iconStarFilled : iconStar) + '</button>'
+      + '</li>';
+  }
+
+  function sectionBlock(title, keys, keyOf) {
+    const items = keys.map(keyOf).filter(Boolean);
+    if (!items.length) return '';
+    return '<div class="mb-4">'
+      + '<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">' + title + '</p>'
+      + '<ul class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 px-4">'
+      + items.map(foodResultRow).join('')
+      + '</ul></div>';
+  }
+
+  function scanSupported() {
+    try {
+      return typeof window.BarcodeDetector === 'function'
+        && window.isSecureContext === true
+        && !!(window.usernode && typeof window.usernode.hasCapability === 'function' && window.usernode.hasCapability('camera'));
+    } catch (_) { return false; }
+  }
+
+  function addSearchBodyHtml() {
+    const a = state.add;
+    const q = a.q || '';
+
+    let body = '';
+    for (const n of a.notices) body += '<div class="mb-3">' + noticeBox(n.message) + '</div>';
+
+    if (a.scanError) body += '<div class="mb-3"><p class="text-sm text-red-600 dark:text-red-400">' + esc(a.scanError) + '</p></div>';
+    if (a.barcodeError) body += '<div class="mb-3"><p class="text-sm text-red-600 dark:text-red-400">' + esc(a.barcodeError) + '</p></div>';
+
+    if (a.error) {
+      body += errorBox(a.error, 'Retry');
+      if (a.results && a.results.length) {
+        body += '<p class="text-xs text-zinc-500 mt-3 mb-1">Showing foods you searched before</p>'
+          + '<ul class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 px-4">'
+          + a.results.map(foodResultRow).join('') + '</ul>';
+      }
+      return body;
+    }
+    if (a.loading) return body + skeletonBlock();
+    if (!a.results) return body;
+
+    if (!q) {
+      const byKey = new Map();
+      for (const f of a.results) byKey.set(f.key, f);
+      const keyOf = (k) => byKey.get(k);
+      const sections = sectionBlock('Favorites', a.sections.favorites || [], keyOf)
+        + sectionBlock('Recent', a.sections.recent || [], keyOf)
+        + sectionBlock('My foods', a.sections.custom || [], keyOf);
+      if (sections) return body + sections;
+      if (a.results.length === 0) {
+        return body + '<div class="py-6 text-center"><p class="text-sm font-medium">Search for a food</p>'
+          + '<p class="text-sm text-zinc-500 mt-1">Type a name to search Open Food Facts and USDA FoodData Central, or create your own food.</p></div>';
+      }
+      return body + '<ul class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 px-4">'
+        + a.results.map(foodResultRow).join('') + '</ul>';
+    }
+
+    if (a.results.length === 0) {
+      return body + '<div class="py-6 text-center"><p class="text-sm font-medium">No foods found</p>'
+        + '<p class="text-sm text-zinc-500 mt-1">Try a different name, or create your own food.</p></div>';
+    }
+    return body + '<ul id="food-results" class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 px-4">'
+      + a.results.map(foodResultRow).join('') + '</ul>';
+  }
+
+  function addViewHtml() {
+    const a = state.add;
+    const q = a.q || '';
+
+    const header = '<div class="flex items-center gap-2 mb-4">'
+      + '<button data-action="add-back" aria-label="Back" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">' + iconBack + '</button>'
+      + '<h1 class="text-xl font-bold flex-1">Add food</h1>'
+      + demoBadge()
+      + '</div>';
+
+    const searchForm = '<form id="food-search-form" class="flex gap-2 mb-3">'
+      + '<input id="food-search-input" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search foods" value="' + esc(q) + '" class="' + inputClass + ' flex-1">'
+      + '<button type="submit" class="min-h-[44px] px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold transition-colors">Search</button>'
+      + '</form>';
+
+    const mealLine = '<p class="text-sm text-zinc-500 mb-3">Adding to <span class="font-semibold text-zinc-700 dark:text-zinc-300">' + MEAL_LABELS[a.meal] + '</span></p>';
+
+    const scanRow = '<div class="flex gap-2 mb-3">'
+      + (scanSupported()
+        ? '<button type="button" data-action="scan-barcode" ' + (a.scanBusy ? 'disabled' : '') + ' class="min-h-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-60">' + (a.scanBusy ? 'Scanning…' : 'Scan barcode') + '</button>'
+        : '')
+      + '<input id="barcode-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Barcode" value="' + esc(a.barcode) + '" class="' + inputClass + ' flex-1">'
+      + '<button type="button" data-action="barcode-lookup" ' + (a.barcodeBusy ? 'disabled' : '') + ' class="min-h-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-60">Look up</button>'
+      + '</div>';
+
+    const createRow = '<button type="button" data-action="create-food" class="w-full min-h-[44px] mb-4 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/5 transition-colors">Create food</button>';
+
+    return card(header + searchForm + mealLine + scanRow + createRow + '<div id="add-results">' + addSearchBodyHtml() + '</div>');
+  }
+
+  // --- Detail sheet ---------------------------------------------------------
+
+  function openDetail(food) {
+    state.detail = { food, servings: 1, meal: state.add ? state.add.meal : 'breakfast' };
+    state.detailError = null;
+    state.detailSaving = false;
+    render();
+  }
+
+  function detailNutrition(food, servings) {
+    const f = Number(servings) > 0 ? Number(servings) : 1;
+    return {
+      calories: round1((Number(food.calories) || 0) * f),
+      protein_g: round1((Number(food.protein_g) || 0) * f),
+      carbs_g: round1((Number(food.carbs_g) || 0) * f),
+      fat_g: round1((Number(food.fat_g) || 0) * f),
+    };
+  }
+
+  function detailSheetHtml() {
+    const d = state.detail;
+    const food = d.food;
+    const n = detailNutrition(food, d.servings);
+    return '<div class="fixed inset-0 z-20 flex items-end sm:items-center justify-center">'
+      + '<button data-action="detail-close" aria-label="Close" class="absolute inset-0 bg-zinc-900/50"></button>'
+      + '<div id="detail-sheet" class="relative w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">'
+      + '<div class="flex items-start justify-between gap-3 mb-1">'
+      + '<div><h2 class="text-lg font-bold">' + esc(food.name) + '</h2>'
+      + (food.brand ? '<p class="text-sm text-zinc-500">' + esc(food.brand) + '</p>' : '')
+      + '<div class="mt-1">' + sourceChip(food) + '</div></div>'
+      + '<button data-action="detail-close" aria-label="Close" class="min-h-[44px] min-w-[44px] -mr-2 -mt-1 inline-flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 text-2xl leading-none">×</button>'
+      + '</div>'
+
+      + '<div class="grid grid-cols-4 gap-2 my-4 text-center">'
+      + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-kcal">' + Math.round(n.calories) + '</p><p class="text-[11px] text-zinc-500">kcal</p></div>'
+      + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-protein">' + Math.round(n.protein_g) + '</p><p class="text-[11px] text-zinc-500">Protein</p></div>'
+      + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-carbs">' + Math.round(n.carbs_g) + '</p><p class="text-[11px] text-zinc-500">Carbs</p></div>'
+      + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-fat">' + Math.round(n.fat_g) + '</p><p class="text-[11px] text-zinc-500">Fat</p></div>'
+      + '</div>'
+
+      + field('Servings <span class="font-normal text-zinc-500">(' + esc(food.serving_label) + ' each)</span>',
+          '<input id="detail-servings" type="number" inputmode="decimal" min="0.25" max="100" step="0.25" value="' + esc(d.servings) + '" class="' + inputClass + '">', null)
+
+      + '<div class="mb-4"><span class="block text-sm font-medium mb-1.5">Meal</span>'
+      + optionGroup('detail_meal', MEAL_OPTIONS, d.meal, false)
+      + '</div>'
+
+      + (state.detailError ? '<p class="text-sm text-red-600 dark:text-red-400 mb-3">' + esc(state.detailError) + '</p>' : '')
+
+      + '<div class="flex gap-3">'
+      + '<button data-action="detail-add" ' + (state.detailSaving ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
+      + (state.detailSaving ? 'Adding…' : 'Add to log') + '</button>'
+      + '</div>'
+      + (food.custom
+        ? '<div class="flex gap-3 mt-3">'
+          + '<button data-action="detail-edit" class="flex-1 min-h-[44px] rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Edit</button>'
+          + '<button data-action="detail-delete" class="flex-1 min-h-[44px] rounded-xl border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors">Delete</button>'
+          + '</div>'
+        : '')
+      + '</div></div>';
+  }
+
+  function updateDetailNumbers() {
+    const d = state.detail;
+    if (!d) return;
+    const n = detailNutrition(d.food, d.servings);
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(Math.round(v)); };
+    set('detail-kcal', n.calories);
+    set('detail-protein', n.protein_g);
+    set('detail-carbs', n.carbs_g);
+    set('detail-fat', n.fat_g);
+  }
+
+  function addToLog() {
+    const d = state.detail;
+    state.detailSaving = true;
+    state.detailError = null;
+    render();
+    api('/api/meals', { method: 'POST', body: { key: d.food.key, meal_type: d.meal, servings: d.servings } })
+      .then(() => {
+        state.detailSaving = false;
+        state.detail = null;
+        state.add = null;
+        state.meals = null;
+        state.water = null;
+        state.log.tab = 'today';
+        state.log.hist = null;
+        state.log.histRange = null;
+        state.logToast = 'Added to ' + MEAL_LABELS[d.meal];
+        window.location.hash = '#log';
+        // If the hash was already #log, the hashchange handler will not fire.
+        if (routeView() === 'log') enterLog();
+      })
+      .catch((err) => {
+        state.detailSaving = false;
+        state.detailError = err.message || 'Could not add that food. Please try again.';
+        render();
+      });
+  }
+
+  function deleteCustomFood(id) {
+    api('/api/custom-foods/' + id, { method: 'DELETE' })
+      .then(() => {
+        state.detail = null;
+        state.add.results = null;
+        render();
+        runSearch(state.add ? state.add.q : '');
+      })
+      .catch((err) => {
+        state.detailError = err.message || 'Could not delete that food. Please try again.';
+        render();
+      });
+  }
+
+  // --- Custom food form -----------------------------------------------------
+
+  function openCreateForm(food) {
+    const editing = !!(food && food.custom_food_id);
+    state.create = {
+      id: editing ? food.custom_food_id : null,
+      editing,
+      saving: false,
+      serverError: null,
+      errors: {},
+      data: {
+        name: food ? food.name : '',
+        serving_g: food ? food.serving_g : '',
+        serving_label: food ? food.serving_label : '',
+        calories: food ? food.calories : '',
+        protein_g: food ? food.protein_g : '',
+        carbs_g: food ? food.carbs_g : '',
+        fat_g: food ? food.fat_g : '',
+      },
+    };
+    state.detail = null;
+    render();
+  }
+
+  function validateCreate(d) {
+    const errors = {};
+    if (!d.name || !d.name.trim()) errors.name = 'Enter a name';
+    else if (d.name.trim().length > 120) errors.name = 'Name must be 120 characters or fewer';
+    const sg = Number(d.serving_g);
+    if (!Number.isFinite(sg) || sg < 1 || sg > 500) errors.serving_g = 'Enter a serving size between 1 and 500 g';
+    for (const [field, label] of [['calories', 'calories'], ['protein_g', 'protein'], ['carbs_g', 'carbs'], ['fat_g', 'fat']]) {
+      const n = Number(d[field]);
+      if (!Number.isFinite(n) || n < 0 || n > 5000) errors[field] = 'Enter ' + label + ' between 0 and 5000';
+    }
+    return errors;
+  }
+
+  function createFormHtml() {
+    const c = state.create;
+    const d = c.data;
+
+    const body =
+      field('Name', textInput('cf_name', 'type="text" maxlength="120" placeholder="e.g. Grandma’s granola"', d.name), c.errors.name)
+      + field('Serving size (g)', textInput('cf_serving_g', 'type="number" inputmode="decimal" min="1" max="500" step="1" placeholder="g"', d.serving_g), c.errors.serving_g)
+      + field('Serving label <span class="font-normal text-zinc-500">(optional)</span>', textInput('cf_serving_label', 'type="text" maxlength="60" placeholder="e.g. 1 cup"', d.serving_label), null)
+      + '<div class="grid grid-cols-2 gap-3">'
+      + field('Calories', textInput('cf_calories', 'type="number" inputmode="decimal" min="0" max="5000" step="1" placeholder="kcal"', d.calories), c.errors.calories)
+      + field('Protein (g)', textInput('cf_protein_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.protein_g), c.errors.protein_g)
+      + field('Carbs (g)', textInput('cf_carbs_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.carbs_g), c.errors.carbs_g)
+      + field('Fat (g)', textInput('cf_fat_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.fat_g), c.errors.fat_g)
+      + '</div>';
+
+    const header = '<div class="flex items-center gap-2 mb-4">'
+      + '<button data-action="create-back" aria-label="Back" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">' + iconBack + '</button>'
+      + '<h1 class="text-xl font-bold flex-1">' + (c.editing ? 'Edit food' : 'Create food') + '</h1>'
+      + '</div>';
+
+    const actions = '<div class="flex gap-3 mt-2">'
+      + '<button type="submit" ' + (c.saving ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
+      + (c.saving ? 'Saving…' : 'Save food') + '</button></div>';
+
+    return card(header + '<form id="create-food-form" novalidate>'
+      + (c.serverError ? '<div class="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 mb-4 text-sm text-red-700 dark:text-red-300">' + esc(c.serverError) + '</div>' : '')
+      + body + actions + '</form>');
+  }
+
+  function readCreateForm() {
+    const c = state.create;
+    const form = document.getElementById('create-food-form');
+    if (!form) return;
+    const map = { name: 'cf_name', serving_g: 'cf_serving_g', serving_label: 'cf_serving_label', calories: 'cf_calories', protein_g: 'cf_protein_g', carbs_g: 'cf_carbs_g', fat_g: 'cf_fat_g' };
+    for (const key of Object.keys(map)) {
+      const el = form.querySelector('[name="' + map[key] + '"]');
+      if (el) c.data[key] = el.value;
+    }
+  }
+
+  function submitCreateForm(event) {
+    event.preventDefault();
+    const c = state.create;
+    readCreateForm();
+    const errors = validateCreate(c.data);
+    c.errors = errors;
+    if (Object.keys(errors).length) { render(); return; }
+    c.saving = true;
+    c.serverError = null;
+    render();
+    const payload = {
+      name: c.data.name.trim(),
+      serving_g: Number(c.data.serving_g),
+      serving_label: c.data.serving_label ? String(c.data.serving_label).trim() : null,
+      calories: Number(c.data.calories),
+      protein_g: Number(c.data.protein_g),
+      carbs_g: Number(c.data.carbs_g),
+      fat_g: Number(c.data.fat_g),
+    };
+    const req = c.editing
+      ? api('/api/custom-foods/' + c.id, { method: 'PUT', body: payload })
+      : api('/api/custom-foods', { method: 'POST', body: payload });
+    req.then(() => {
+      state.create = null;
+      state.add.results = null;
+      render();
+      runSearch(state.add ? state.add.q : '');
+    }).catch((err) => {
+      c.saving = false;
+      if (err.status === 400 && err.data && err.data.errors) c.errors = err.data.errors;
+      else c.serverError = err.message || 'Could not save your food. Please try again.';
+      render();
+    });
+  }
+
+  // --- Favorites ------------------------------------------------------------
+
+  function toggleFavorite(key, isFav, favId) {
+    const req = isFav
+      ? api('/api/favorites/' + favId, { method: 'DELETE' })
+      : api('/api/favorites', { method: 'POST', body: { key } });
+    req.then(() => {
+      state.add.results = null;
+      state.detail = null;
+      render();
+      runSearch(state.add ? state.add.q : '');
+      // Refresh the log's Today view so a favorite flipped from there stays honest.
+      if (state.meals) api('/api/history?range=day').then(applyDayPayload).catch(() => {});
+    }).catch((err) => {
+      state.add.error = err.message || 'Could not update your favorites. Please try again.';
+      render();
+    });
+  }
+
+  // --- Barcode --------------------------------------------------------------
+
+  function lookupBarcode(codeOverride) {
+    const a = state.add;
+    const code = (codeOverride != null ? codeOverride : a.barcode || '').trim();
+    if (!/^\d{8,14}$/.test(code)) {
+      a.barcodeError = 'Enter a valid barcode (8 to 14 digits)';
+      render();
+      return;
+    }
+    a.barcodeBusy = true;
+    a.barcodeError = null;
+    render();
+    api('/api/foods/barcode/' + encodeURIComponent(code))
+      .then((data) => {
+        a.barcodeBusy = false;
+        a.barcode = code;
+        render();
+        openDetail(data.food);
+      })
+      .catch((err) => {
+        a.barcodeBusy = false;
+        a.barcodeError = err.status === 404 ? 'No food found for that barcode' : (err.message || 'Barcode lookup failed. Please try again.');
+        render();
+      });
+  }
+
+  async function scanBarcode() {
+    const a = state.add;
+    a.scanBusy = true;
+    a.scanError = null;
+    render();
+    let stream = null;
+    try {
+      const perm = await window.usernode.requestPermission('camera');
+      if (perm && perm.state !== 'granted') {
+        a.scanBusy = false;
+        a.scanError = 'Camera access was not granted';
+        render();
+        return;
+      }
+      if (perm && perm.active === false) {
+        // Granted, and the frame is about to reload to apply the permission.
+        // Stop here and let the reload land.
+        a.scanBusy = false;
+        render();
+        return;
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      const video = document.createElement('video');
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
+      const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+      let found = null;
+      for (let i = 0; i < 40 && !found; i += 1) {
+        const codes = await detector.detect(video);
+        if (codes && codes.length) found = codes[0].rawValue;
+        else await new Promise((r) => setTimeout(r, 250));
+      }
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+      a.scanBusy = false;
+      if (!found) {
+        a.scanError = 'No barcode detected. Try again or type the number below.';
+        render();
+        return;
+      }
+      a.barcode = String(found);
+      lookupBarcode(String(found));
+    } catch (err) {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      a.scanBusy = false;
+      a.scanError = 'Could not use the camera. Type the barcode below instead.';
+      render();
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -787,19 +1496,26 @@
       + '">' + icon + '<span>' + label + '</span></button>';
   }
 
+  function activeNav() {
+    if (state.view === 'log' || state.view === 'add') return 'log';
+    if (state.view === 'wizard' && state.wiz && state.wiz.editing) return 'profile';
+    return 'dashboard';
+  }
+
   function shell(inner) {
     // The nav exists once a plan does; first-run onboarding is a focused
     // full-screen flow with no dashboard to visit yet.
     if (!state.onboarded) {
       return '<div class="min-h-screen"><main class="max-w-3xl mx-auto w-full px-4 pt-6 pb-10">' + inner + '</main></div>';
     }
-    const active = state.view === 'wizard' && state.wiz && state.wiz.editing ? 'profile' : 'dashboard';
+    const active = activeNav();
     return '<div class="min-h-screen lg:flex">'
       + '<aside class="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col gap-2 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">'
       + '<div class="flex items-center gap-2 px-2 py-3 text-primary-600 dark:text-primary-400 font-bold text-lg">'
       + '<svg viewBox="0 0 100 100" class="w-6 h-6" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="currentColor"/><circle cx="50" cy="50" r="18" fill="white"/></svg>'
       + 'My Fitness</div>'
       + '<nav aria-label="Main">' + navButton('dashboard', 'Dashboard', iconDashboard, active === 'dashboard')
+      + navButton('log', 'Food log', iconLog, active === 'log')
       + navButton('profile', 'Profile', iconProfile, active === 'profile') + '</nav>'
       + (state.targets ? '<div class="mt-auto rounded-xl bg-zinc-100 dark:bg-zinc-800/60 px-4 py-3 text-sm">'
         + '<p class="text-xs text-zinc-500">Calorie target</p>'
@@ -807,11 +1523,16 @@
       + '</aside>'
       + '<div class="flex-1 lg:pl-60"><main class="max-w-3xl mx-auto w-full px-4 pt-6 pb-28 lg:pb-10">' + inner + '</main></div>'
       + '<nav aria-label="Main" class="lg:hidden fixed bottom-0 inset-x-0 z-10 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur" style="padding-bottom:var(--un-safe-inset-bottom, env(safe-area-inset-bottom, 0px))">'
-      + '<div class="grid grid-cols-2 max-w-md mx-auto">'
-      + '<button data-nav="dashboard" aria-current="' + (active === 'dashboard' ? 'page' : 'false') + '" class="flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ' + (active === 'dashboard' ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-500') + '">' + iconDashboard + 'Dashboard</button>'
-      + '<button data-nav="profile" aria-current="' + (active === 'profile' ? 'page' : 'false') + '" class="flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ' + (active === 'profile' ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-500') + '">' + iconProfile + 'Profile</button>'
+      + '<div class="grid grid-cols-3 max-w-md mx-auto">'
+      + navTab('dashboard', 'Dashboard', iconDashboard, active === 'dashboard')
+      + navTab('log', 'Food log', iconLog, active === 'log')
+      + navTab('profile', 'Profile', iconProfile, active === 'profile')
       + '</div></nav>'
       + '</div>';
+  }
+
+  function navTab(view, label, icon, active) {
+    return '<button data-nav="' + view + '" aria-current="' + (active ? 'page' : 'false') + '" class="flex flex-col items-center gap-1 py-2.5 text-xs font-semibold ' + (active ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-500') + '">' + icon + label + '</button>';
   }
 
   // ---------------------------------------------------------------------
@@ -845,30 +1566,89 @@
       }
       return;
     }
+    if (state.view === 'log') {
+      appEl.innerHTML = shell(logViewHtml());
+      return;
+    }
+
+    if (state.view === 'add') {
+      if (state.create) {
+        appEl.innerHTML = shell(createFormHtml());
+        const form = document.getElementById('create-food-form');
+        if (form) form.addEventListener('submit', submitCreateForm);
+        return;
+      }
+      let html = shell(addViewHtml());
+      if (state.detail) {
+        html = shell(addViewHtml() + detailSheetHtml());
+      }
+      appEl.innerHTML = html;
+      const form = document.getElementById('food-search-form');
+      if (form) form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('food-search-input');
+        runSearch(input ? input.value : '');
+      });
+      const bc = document.getElementById('barcode-input');
+      if (bc) {
+        bc.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); lookupBarcode(); }
+        });
+      }
+      return;
+    }
+
     // dashboard
     appEl.innerHTML = shell(dashboardHtml());
   }
+
+  // Serving input updates the numbers in place (no re-render, so focus and
+  // cursor position survive typing).
+  appEl.addEventListener('input', (event) => {
+    const t = event.target;
+    if (t && t.id === 'detail-servings') {
+      const v = Number(t.value);
+      if (state.detail) state.detail.servings = Number.isFinite(v) && v > 0 ? v : 1;
+      updateDetailNumbers();
+      return;
+    }
+    if (t && t.id === 'barcode-input' && state.add) {
+      state.add.barcode = t.value;
+    }
+  });
+
+  appEl.addEventListener('change', (event) => {
+    const t = event.target;
+    if (t && t.type === 'radio' && t.name === 'detail_meal' && state.detail) {
+      state.detail.meal = t.value;
+    }
+  });
 
   appEl.addEventListener('click', (event) => {
     const nav = event.target.closest('[data-nav]');
     if (nav) {
       const target = nav.getAttribute('data-nav');
-      if (target === 'profile') {
-        location.hash = '#profile';
-      } else if (location.hash === '#profile') {
+      if (target === 'profile') location.hash = '#profile';
+      else if (target === 'log') location.hash = '#log';
+      else {
+        state.add = null;
+        state.detail = null;
+        state.create = null;
         location.hash = '#dashboard';
-      } else if (state.onboarded) {
-        state.view = 'dashboard';
-        render();
-        loadDashboard();
+        if (routeView() === 'dashboard' && state.onboarded) { state.view = 'dashboard'; render(); if (!state.meals) loadDashboard(); }
       }
       return;
     }
+
     const action = event.target.closest('[data-action]');
     if (!action) return;
     const kind = action.getAttribute('data-action');
+
     if (kind === 'retry') {
-      if (state.bootError) { delete state.bootError; state.view = 'loading'; render(); boot(); }
+      if (state.mealError) { state.mealError = null; render(); return; }
+      if (state.view === 'log') { if (state.log.tab === 'today') loadDayForLog(); else loadHistory(state.log.tab); }
+      else if (state.view === 'add') runSearch(state.add ? state.add.q : '');
+      else if (state.bootError) { delete state.bootError; state.view = 'loading'; render(); boot(); }
       else loadDashboard();
       return;
     }
@@ -894,6 +1674,81 @@
           state.waterError = err.message || 'Could not save your water log';
           render();
         });
+      return;
+    }
+    if (kind === 'log-tab') {
+      const tab = action.getAttribute('data-tab');
+      if (state.log.tab === tab) return;
+      state.log.error = null;
+      const target = tab === 'today' ? '#log' : '#log/' + tab;
+      if (location.hash === target) { state.log.tab = tab; enterLog(); }
+      else location.hash = target;
+      return;
+    }
+    if (kind === 'add-food') {
+      const meal = action.getAttribute('data-meal') || 'breakfast';
+      if (!state.add) state.add = freshAddState();
+      state.add.meal = meal;
+      state.add.origin = state.view === 'log' ? '#log' : '#dashboard';
+      state.add.results = null;
+      state.add.error = null;
+      state.detail = null;
+      state.create = null;
+      location.hash = '#add';
+      if (routeView() === 'add') enterAdd();
+      return;
+    }
+    if (kind === 'add-back') {
+      const origin = (state.add && state.add.origin) || '#dashboard';
+      state.add = null;
+      state.detail = null;
+      state.create = null;
+      location.hash = origin;
+      if (routeView() !== 'add') {
+        if (origin === '#log') enterLog(); else { state.view = 'dashboard'; render(); if (!state.meals) loadDashboard(); }
+      }
+      return;
+    }
+    if (kind === 'food-open') {
+      const key = action.getAttribute('data-key');
+      const food = state.add && state.add.results ? state.add.results.find((f) => f.key === key) : null;
+      if (food) openDetail(food);
+      return;
+    }
+    if (kind === 'fav-toggle') {
+      if (DEMO) { state.add.error = 'Demo data is read-only'; render(); return; }
+      const key = action.getAttribute('data-key');
+      const isFav = action.getAttribute('data-fav') === '1';
+      const favId = action.getAttribute('data-favid');
+      toggleFavorite(key, isFav, favId);
+      return;
+    }
+    if (kind === 'detail-close') { state.detail = null; state.detailError = null; render(); return; }
+    if (kind === 'detail-add') { addToLog(); return; }
+    if (kind === 'detail-edit') { if (state.detail) openCreateForm(state.detail.food); return; }
+    if (kind === 'detail-delete') {
+      if (state.detail && state.detail.food.custom_food_id) deleteCustomFood(state.detail.food.custom_food_id);
+      return;
+    }
+    if (kind === 'create-food') { openCreateForm(null); return; }
+    if (kind === 'create-back') { state.create = null; render(); return; }
+    if (kind === 'barcode-lookup') { lookupBarcode(); return; }
+    if (kind === 'scan-barcode') { scanBarcode(); return; }
+    if (kind === 'meal-remove') {
+      const id = action.getAttribute('data-id');
+      if (!id) return;
+      state.mealError = null;
+      render();
+      api('/api/meals/' + id, { method: 'DELETE' })
+        .then(() => {
+          state.meals = null;
+          if (state.view === 'log') loadDayForLog(); else loadDashboard();
+        })
+        .catch((err) => {
+          state.mealError = err.message || 'Could not remove that entry. Please try again.';
+          render();
+        });
+      return;
     }
   });
 

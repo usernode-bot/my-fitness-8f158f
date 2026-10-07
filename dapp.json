@@ -1,5 +1,18 @@
 {
-  "secrets": [],
+  "secrets": [
+    {
+      "key": "USDA_FDC_API_KEY",
+      "description": "USDA FoodData Central API key, free from https://fdc.nal.usda.gov/api-key-signup. Enables USDA results in food search.",
+      "required": false,
+      "private": true
+    }
+  ],
+  "permissions": [
+    {
+      "capability": "camera",
+      "reason": "Scan food barcodes with your camera"
+    }
+  ],
   "tests": [
     {
       "id": "onboarding.wizard",
@@ -24,6 +37,51 @@
         "public/**",
         "server.js",
         "calculations.js",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "food-search.demo",
+      "name": "Food search shows demo results",
+      "path": "/?demo=1#add",
+      "expectSelector": "#add-results",
+      "expectText": "Staging demo oat bowl",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "food-log.demo",
+      "name": "Food log Today shows demo meals",
+      "path": "/?demo=1#log",
+      "expectSelector": "#log-meals",
+      "expectText": "Staging demo oat bowl",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "food-history.demo",
+      "name": "Food log Week shows demo history",
+      "path": "/?demo=1#log/week",
+      "expectSelector": "#log-history",
+      "expectText": "Average calories",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
         "tailwind.config.js"
       ]
     }
