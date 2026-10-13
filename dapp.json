@@ -85,5 +85,9 @@
         "tailwind.config.js"
       ]
     }
-  ]
+  ],
+  "icon": {
+    "image": "brand/icon.png",
+    "emoji": "💪"
+  }
 }
