@@ -381,18 +381,30 @@ app.get('/api/state', async (req, res) => {
   }
 });
 
-// POST /api/water — log one more (or one fewer) 250 ml glass today. The
+// POST /api/water — log water for today. Two body shapes: `{ delta: 1 | -1 }`
+// moves one glass at a time (the card's quick buttons) and `{ glasses: <int> }`
+// sets the day's count outright (the log sheet's stepper and chips). The
 // count is clamped server-side to 0..20; the client mirrors the same clamp.
 app.post('/api/water', async (req, res) => {
-  const delta = req.body && req.body.delta;
-  if (delta !== 1 && delta !== -1) {
+  const body = req.body || {};
+  const hasAbsolute = body.glasses !== undefined;
+  let glassesValue = 0;
+  if (hasAbsolute) {
+    const g = Number(body.glasses);
+    if (!Number.isInteger(g) || g < 0 || g > MAX_GLASSES) {
+      return res.status(400).json({ error: 'Glasses must be a whole number between 0 and ' + MAX_GLASSES });
+    }
+    glassesValue = g;
+  } else if (body.delta !== 1 && body.delta !== -1) {
     return res.status(400).json({ error: 'delta must be 1 or -1' });
   }
   if (isDemoRequest(req)) {
     // Read-only demo: answer the same shape without writing anything.
     const demo = demoData();
     const targets = computeTargets(demo.profile, demo.goal);
-    const glasses = Math.min(MAX_GLASSES, Math.max(0, 4 + delta));
+    const glasses = hasAbsolute
+      ? glassesValue
+      : Math.min(MAX_GLASSES, Math.max(0, 4 + body.delta));
     return res.json({
       demo: true,
       glasses,
@@ -408,13 +420,20 @@ app.post('/api/water', async (req, res) => {
     }
     const day = todayKey();
     const { rows } = await pool.query(
-      `INSERT INTO water_logs (user_id, log_date, glasses)
-       VALUES ($1, $2, LEAST(GREATEST($3::int, 0), $4::int))
-       ON CONFLICT (user_id, log_date) DO UPDATE SET
-         glasses = LEAST(GREATEST(water_logs.glasses + $3::int, 0), $4::int),
-         updated_at = NOW()
-       RETURNING glasses`,
-      [req.user.id, day, delta, MAX_GLASSES]
+      hasAbsolute
+        ? `INSERT INTO water_logs (user_id, log_date, glasses)
+           VALUES ($1, $2, LEAST(GREATEST($3::int, 0), $4::int))
+           ON CONFLICT (user_id, log_date) DO UPDATE SET
+             glasses = LEAST(GREATEST(EXCLUDED.glasses, 0), $4::int),
+             updated_at = NOW()
+           RETURNING glasses`
+        : `INSERT INTO water_logs (user_id, log_date, glasses)
+           VALUES ($1, $2, LEAST(GREATEST($3::int, 0), $4::int))
+           ON CONFLICT (user_id, log_date) DO UPDATE SET
+             glasses = LEAST(GREATEST(water_logs.glasses + $3::int, 0), $4::int),
+             updated_at = NOW()
+           RETURNING glasses`,
+      [req.user.id, day, hasAbsolute ? glassesValue : body.delta, MAX_GLASSES]
     );
     const glasses = rows[0].glasses;
     const targets = computeTargets(loaded.profile, loaded.goal);

@@ -42,10 +42,55 @@
     },
     {
       "id": "food-search.demo",
-      "name": "Food search shows demo results",
+      "name": "Add food opens at the meal step",
       "path": "/?demo=1#add",
+      "expectSelector": "#add-wizard",
+      "expectText": "Which meal",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "food-find.demo",
+      "name": "Find-food step shows demo results",
+      "path": "/?demo=1#add/find",
       "expectSelector": "#add-results",
       "expectText": "Staging demo oat bowl",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "create-food.demo",
+      "name": "Create food opens at name and serving step",
+      "path": "/?demo=1#add/find/create",
+      "expectSelector": "#create-food-form",
+      "expectText": "Name and serving",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "foods.js",
+        "dapp.json",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "id": "water-sheet.demo",
+      "name": "Water log sheet opens over Food log",
+      "path": "/?demo=1#log/water",
+      "expectSelector": "#water-sheet",
+      "expectText": "Log water",
       "visual": true,
       "impact": [
         "public/**",

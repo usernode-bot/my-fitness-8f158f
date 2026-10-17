@@ -29,13 +29,20 @@ macros, water) and tracks how you are doing against it, day by day.
   server-side with caching and per-source timeouts. Results from both sources
   are merged and deduplicated, and each result names the source it came from.
   Recent foods, favorites and your own custom foods appear before you type.
+  Adding food is a guided three-step flow — **Which meal? → Find your food →
+  How much?** — with barcode scanning/typing and food creation as quieter
+  "More ways to add" below the results.
 - **Barcode lookup**: a Scan barcode button where the browser supports
-  `BarcodeDetector` and the camera is granted, plus a Barcode field to type or
-  paste a number everywhere else.
-- **Custom foods** ("My foods") you create, edit and delete; they behave exactly
-  like database foods. **Favorites** star any food for one-tap access later.
-- **Water** stays as it was: 250 ml glasses with a target computed from your
-  plan, now also visible over the week and month.
+  `BarcodeDetector` and the camera is granted, plus an "Enter a barcode"
+  field to type or paste a number everywhere else.
+- **Custom foods** ("My foods") you create, edit and delete; the form asks
+  for the name and serving first, then the nutrition numbers, and the saved
+  food is selected straight away for logging. They behave exactly like
+  database foods. **Favorites** star any food for one-tap access later.
+- **Water** uses 250 ml glasses with a target computed from your plan, also
+  visible over the week and month. The card keeps one-tap **+1 glass** /
+  **−1**, and a **Log water…** sheet adds a stepper and quick amounts (a
+  glass, a 500 ml bottle) saved in one go.
 - **Your data is real**: everything is stored in the app's own PostgreSQL
   database, scoped to your platform user id. Error states show real errors;
   there is no demo or mock mode in the product. A food search that cannot reach

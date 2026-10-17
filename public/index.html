@@ -157,6 +157,7 @@
     dashLoading: false,
     waterPending: false,
     waterError: null,
+    waterSheet: null,         // open water log sheet state
     mealError: null,
     wiz: null,                // wizard state, created on demand
     log: { tab: 'today', hist: null, histRange: null, loading: false, error: null },
@@ -196,6 +197,8 @@
   const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
   const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
   const MEAL_OPTIONS = MEAL_ORDER.map((k) => ({ value: k, label: MEAL_LABELS[k] }));
+  // Mirrors MAX_GLASSES on the server; both ends clamp the day's count.
+  const WATER_MAX_GLASSES = 20;
 
   const CALORIE_FLOOR = 1200;
   const MACRO_SPLITS = {
@@ -249,7 +252,7 @@
     const h = location.hash;
     if (h === '#profile') return 'wizard';
     if (h === '#log' || h.indexOf('#log/') === 0) return 'log';
-    if (h === '#add') return 'add';
+    if (h === '#add' || h.indexOf('#add/') === 0) return 'add';
     return 'dashboard';
   }
 
@@ -749,7 +752,7 @@
       + (m.count === 0
         ? '<div class="py-4 text-center"><p class="text-sm font-medium">No meals logged yet</p>'
           + '<p class="text-sm text-zinc-500 mt-1 mb-3">Log what you eat to track today against your plan.</p>'
-          + primaryButton('add-food', 'Add food', 'px-5', 'data-meal="breakfast"') + '</div>'
+          + primaryButton('add-food', 'Add food', 'px-5') + '</div>'
         : MEAL_ORDER.map((key) => mealGroupBlock(key, m.groups[key] || [], '+ Add')).join(''));
     return card(inner);
   }
@@ -775,11 +778,57 @@
       + Array.from({ length: iconCount }, (_, i) => glassIcon(i < w.glasses)).join('')
       + '</div>'
       + (state.waterError ? '<p class="text-sm text-red-600 dark:text-red-400 mb-2">' + esc(state.waterError) + '</p>' : '')
-      + '<div class="flex gap-3">'
+      + '<div class="flex flex-wrap gap-3">'
       + '<button data-action="water-add" ' + (state.waterPending ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold transition-colors disabled:opacity-60">+1 glass</button>'
       + '<button data-action="water-remove" ' + (state.waterPending || w.glasses === 0 ? 'disabled' : '') + ' aria-label="Remove one glass" class="min-h-[44px] min-w-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">−1</button>'
+      + '<button data-action="water-sheet" class="min-h-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Log water…</button>'
       + '</div>';
     return card(inner);
+  }
+
+  // --- Water log sheet ------------------------------------------------------
+
+  function freshWaterSheet() {
+    return {
+      glasses: state.water ? state.water.glasses : 0,
+      saving: false,
+      error: null,
+    };
+  }
+
+  function waterSheetHtml() {
+    const ws = state.waterSheet;
+    const w = state.water;
+    const g = Math.min(WATER_MAX_GLASSES, Math.max(0, ws.glasses));
+    const targetGlasses = Math.ceil(w.targetMl / w.glassMl);
+    const chipClass = 'min-h-[44px] px-4 rounded-full border border-zinc-300 dark:border-zinc-700 text-sm font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors';
+    const stepBtn = (delta, label, disabled) =>
+      '<button type="button" data-action="ws-adjust" data-delta="' + delta + '" ' + (disabled ? 'disabled' : '')
+      + ' aria-label="' + label + '" class="min-h-[56px] min-w-[56px] rounded-xl border border-zinc-300 dark:border-zinc-700 text-2xl font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">'
+      + (delta > 0 ? '+' : '−') + '</button>';
+    return '<div class="fixed inset-0 z-20 flex items-end sm:items-center justify-center">'
+      + '<button data-action="water-sheet-close" aria-label="Close" class="absolute inset-0 bg-zinc-900/50"></button>'
+      + '<div id="water-sheet" class="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">'
+      + '<div class="flex items-baseline justify-between gap-2 mb-3">'
+      + '<h2 class="text-lg font-bold">Log water</h2>'
+      + '<button data-action="water-sheet-close" aria-label="Close" class="min-h-[44px] min-w-[44px] -mr-2 inline-flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 text-2xl leading-none">×</button>'
+      + '</div>'
+      + '<p class="text-sm text-zinc-500 mb-3 tabular-nums">' + g + ' of ' + targetGlasses + ' glasses · '
+      + (g * w.glassMl) + ' of ' + w.targetMl + ' ml</p>'
+      + '<div class="flex items-center justify-center gap-4 mb-4">'
+      + stepBtn(-1, 'One glass less', g === 0 || ws.saving)
+      + '<span class="text-4xl font-bold tabular-nums w-16 text-center">' + g + '</span>'
+      + stepBtn(1, 'One glass more', g >= WATER_MAX_GLASSES || ws.saving)
+      + '</div>'
+      + '<div class="flex flex-wrap gap-2 mb-4">'
+      + '<button type="button" data-action="ws-chip" data-glasses="1" class="' + chipClass + '">+1 glass · ' + w.glassMl + ' ml</button>'
+      + '<button type="button" data-action="ws-chip" data-glasses="2" class="' + chipClass + '">+1 bottle · ' + (w.glassMl * 2) + ' ml</button>'
+      + '<button type="button" data-action="ws-chip" data-glasses="-1" ' + (g === 0 ? 'disabled' : '') + ' class="' + chipClass + ' disabled:opacity-40">−1 glass</button>'
+      + '</div>'
+      + (ws.error ? '<p class="text-sm text-red-600 dark:text-red-400 mb-2">' + esc(ws.error) + '</p>' : '')
+      + '<button type="button" data-action="ws-save" ' + (ws.saving ? 'disabled' : '') + ' class="w-full min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
+      + (ws.saving ? 'Saving…' : 'Save') + '</button>'
+      + '</div></div>';
   }
 
   function statTile(label, value) {
@@ -854,6 +903,9 @@
     state.view = 'log';
     const tab = logTabFromHash();
     if (tab !== state.log.tab) { state.log.tab = tab; state.log.error = null; }
+    if (location.hash === '#log/water' && state.water && !state.waterSheet) {
+      state.waterSheet = freshWaterSheet();
+    }
     if (state.log.tab === 'today' && !state.meals) {
       loadDayForLog();
       return;
@@ -873,6 +925,9 @@
       .then((data) => {
         applyDayPayload(data);
         state.log.loading = false;
+        if (location.hash === '#log/water' && state.water && !state.waterSheet) {
+          state.waterSheet = freshWaterSheet();
+        }
         render();
       })
       .catch((err) => {
@@ -995,7 +1050,10 @@
 
   function freshAddState() {
     return {
+      step: 1,               // 1 = which meal, 2 = find (3 is state.detail)
+      mealChosen: false,     // false until a meal step was submitted
       meal: 'breakfast',
+      pendingDetail: null,   // food held while the meal step is re-answered
       origin: '#dashboard',
       q: '',
       results: null,       // null = not searched yet
@@ -1003,9 +1061,11 @@
       notices: [],
       loading: false,
       error: null,
+      mealError: null,
       barcode: '',
       barcodeBusy: false,
       barcodeError: null,
+      showBarcodeField: false,
       scanBusy: false,
       scanError: null,
     };
@@ -1013,11 +1073,24 @@
 
   function enterAdd() {
     if (!state.add) state.add = freshAddState();
+    const h = location.hash;
     state.view = 'add';
     state.detail = null;
+    state.detailError = null;
     state.create = null;
+    if (h === '#add/find' || h.indexOf('#add/find/') === 0) {
+      // Deep links land on the find step with the default meal, like #add
+      // did before the wizard; #add/find/create opens the two-step form.
+      state.add.step = 2;
+      state.add.mealChosen = true;
+      if (h === '#add/find/create') { openCreateForm(null); return; }
+    } else if (!state.add.mealChosen) {
+      state.add.step = 1;
+    }
     render();
-    if (!state.add.results && !state.add.loading) runSearch('');
+    if (!state.detail && state.add.step >= 2 && !state.add.results && !state.add.loading) {
+      runSearch(state.add.q || '');
+    }
   }
 
   function runSearch(q) {
@@ -1140,24 +1213,111 @@
       + demoBadge()
       + '</div>';
 
+    let body;
+    if (state.detail) body = amountStepHtml();
+    else if (a.step === 1) body = mealStepHtml();
+    else body = findStepHtml();
+
+    return card(header + body);
+  }
+
+  // The add-food wizard reuses the onboarding wizard's progress bar and
+  // Back / Continue rhythm: one question per step.
+  function addStepsBar(step) {
+    const stepTitles = ['Which meal?', 'Find your food', 'How much?'];
+    return '<div class="mb-6">'
+      + '<div class="flex gap-1.5 mb-2">'
+      + [1, 2, 3].map((s) =>
+          '<span class="h-1.5 flex-1 rounded-full ' + (s <= step ? 'bg-primary-600' : 'bg-zinc-200 dark:bg-zinc-800') + '"></span>').join('')
+      + '</div>'
+      + '<p class="text-sm text-zinc-500">Step ' + step + ' of 3 · ' + esc(stepTitles[step - 1]) + '</p>'
+      + '</div>';
+  }
+
+  function mealStepHtml() {
+    const a = state.add;
+    const groups = state.meals ? state.meals.groups : null;
+    const hintFor = (key) => {
+      if (!groups) return null;
+      const entries = groups[key] || [];
+      if (!entries.length) return 'Nothing logged yet';
+      const kcal = entries.reduce((sum, e) => sum + Number(e.calories), 0);
+      return Math.round(kcal) + ' kcal logged so far';
+    };
+    const options = MEAL_ORDER.map((key) => ({
+      value: key, label: MEAL_LABELS[key], hint: hintFor(key),
+    }));
+    return '<div id="add-wizard">' + addStepsBar(1)
+      + '<form id="add-meal-form" novalidate>'
+      + (a.mealError ? '<p class="text-sm text-red-600 dark:text-red-400 mb-3">' + esc(a.mealError) + '</p>' : '')
+      + '<div class="mb-1"><span class="block text-sm font-medium mb-1.5">Meal</span>'
+      + optionGroup('add_meal', options, a.mealChosen ? a.meal : '', true)
+      + '</div>'
+      + '<button type="submit" class="w-full mt-6 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">Continue</button>'
+      + '</form></div>';
+  }
+
+  function onMealStepSubmit(event) {
+    event.preventDefault();
+    const a = state.add;
+    if (!a) return;
+    const checked = document.querySelector('#add-meal-form [name="add_meal"]:checked');
+    if (!checked) { a.mealError = 'Choose a meal'; render(); return; }
+    a.meal = checked.value;
+    a.mealChosen = true;
+    a.mealError = null;
+    if (a.pendingDetail) {
+      // "Change" from the amount step: re-answer the meal, keep the food.
+      const d = a.pendingDetail;
+      a.pendingDetail = null;
+      d.meal = a.meal;
+      state.detail = d;
+      a.step = 3;
+      render();
+      return;
+    }
+    a.step = 2;
+    render();
+    if (!a.results && !a.loading) runSearch(a.q || '');
+  }
+
+  function findStepHtml() {
+    const a = state.add;
+    const q = a.q || '';
+
+    const mealLine = '<div class="flex items-center justify-between gap-2 mb-3">'
+      + '<p class="text-sm text-zinc-500">Adding to <span class="font-semibold text-zinc-700 dark:text-zinc-300">' + MEAL_LABELS[a.meal] + '</span></p>'
+      + '<button type="button" data-action="add-change-meal" class="min-h-[36px] px-3 rounded-lg text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/10 transition-colors">Change</button>'
+      + '</div>';
+
     const searchForm = '<form id="food-search-form" class="flex gap-2 mb-3">'
       + '<input id="food-search-input" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search foods" value="' + esc(q) + '" class="' + inputClass + ' flex-1">'
       + '<button type="submit" class="min-h-[44px] px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold transition-colors">Search</button>'
       + '</form>';
 
-    const mealLine = '<p class="text-sm text-zinc-500 mb-3">Adding to <span class="font-semibold text-zinc-700 dark:text-zinc-300">' + MEAL_LABELS[a.meal] + '</span></p>';
-
-    const scanRow = '<div class="flex gap-2 mb-3">'
+    // The alternate entry points stay reachable but quieter than the search,
+    // below the results instead of stacked above them.
+    const moreWays = '<div class="mt-4 mb-3">'
+      + '<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">More ways to add</p>'
+      + '<div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">'
       + (scanSupported()
-        ? '<button type="button" data-action="scan-barcode" ' + (a.scanBusy ? 'disabled' : '') + ' class="min-h-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-60">' + (a.scanBusy ? 'Scanning…' : 'Scan barcode') + '</button>'
+        ? '<button type="button" data-action="scan-barcode" ' + (a.scanBusy ? 'disabled' : '') + ' class="w-full text-left px-4 min-h-[44px] py-2.5 text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/5 transition-colors disabled:opacity-60">' + (a.scanBusy ? 'Scanning…' : 'Scan barcode') + '</button>'
         : '')
-      + '<input id="barcode-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Barcode" value="' + esc(a.barcode) + '" class="' + inputClass + ' flex-1">'
-      + '<button type="button" data-action="barcode-lookup" ' + (a.barcodeBusy ? 'disabled' : '') + ' class="min-h-[44px] px-4 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-60">Look up</button>'
+      + '<button type="button" data-action="toggle-barcode" class="w-full text-left px-4 min-h-[44px] py-2.5 text-sm font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Enter a barcode</button>'
+      + '</div>'
+      + (a.showBarcodeField
+        ? '<div class="flex gap-2 mt-2">'
+          + '<input id="barcode-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Barcode" value="' + esc(a.barcode) + '" class="' + inputClass + ' flex-1">'
+          + '<button type="button" data-action="barcode-lookup" ' + (a.barcodeBusy ? 'disabled' : '') + ' class="min-h-[44px] px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold transition-colors disabled:opacity-60">Look up</button>'
+          + '</div>'
+        : '')
       + '</div>';
 
-    const createRow = '<button type="button" data-action="create-food" class="w-full min-h-[44px] mb-4 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/5 transition-colors">Create food</button>';
+    const createRow = '<button type="button" data-action="create-food" class="w-full min-h-[44px] mb-4 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm font-semibold text-primary-700 dark:text-primary-400 hover:bg-primary-600/5 transition-colors">Create your own food</button>';
 
-    return card(header + searchForm + mealLine + scanRow + createRow + '<div id="add-results">' + addSearchBodyHtml() + '</div>');
+    return addStepsBar(2) + mealLine + searchForm
+      + '<div id="add-results">' + addSearchBodyHtml() + '</div>'
+      + moreWays + createRow;
   }
 
   // --- Detail sheet ---------------------------------------------------------
@@ -1179,21 +1339,18 @@
     };
   }
 
-  function detailSheetHtml() {
+  // Step 3 of the add-food wizard: the old detail sheet, promoted to a full
+  // screen so the numbers have room. Keeps the no-rerender servings input.
+  function amountStepHtml() {
     const d = state.detail;
     const food = d.food;
     const n = detailNutrition(food, d.servings);
-    return '<div class="fixed inset-0 z-20 flex items-end sm:items-center justify-center">'
-      + '<button data-action="detail-close" aria-label="Close" class="absolute inset-0 bg-zinc-900/50"></button>'
-      + '<div id="detail-sheet" class="relative w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">'
-      + '<div class="flex items-start justify-between gap-3 mb-1">'
-      + '<div><h2 class="text-lg font-bold">' + esc(food.name) + '</h2>'
+    return '<div id="add-wizard">' + addStepsBar(3)
+      + '<div class="mb-4"><h2 class="text-lg font-bold">' + esc(food.name) + '</h2>'
       + (food.brand ? '<p class="text-sm text-zinc-500">' + esc(food.brand) + '</p>' : '')
       + '<div class="mt-1">' + sourceChip(food) + '</div></div>'
-      + '<button data-action="detail-close" aria-label="Close" class="min-h-[44px] min-w-[44px] -mr-2 -mt-1 inline-flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 text-2xl leading-none">×</button>'
-      + '</div>'
 
-      + '<div class="grid grid-cols-4 gap-2 my-4 text-center">'
+      + '<div class="grid grid-cols-4 gap-2 mb-4 text-center">'
       + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-kcal">' + Math.round(n.calories) + '</p><p class="text-[11px] text-zinc-500">kcal</p></div>'
       + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-protein">' + Math.round(n.protein_g) + '</p><p class="text-[11px] text-zinc-500">Protein</p></div>'
       + '<div class="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 py-2"><p class="text-lg font-bold tabular-nums" id="detail-carbs">' + Math.round(n.carbs_g) + '</p><p class="text-[11px] text-zinc-500">Carbs</p></div>'
@@ -1201,25 +1358,26 @@
       + '</div>'
 
       + field('Servings <span class="font-normal text-zinc-500">(' + esc(food.serving_label) + ' each)</span>',
-          '<input id="detail-servings" type="number" inputmode="decimal" min="0.25" max="100" step="0.25" value="' + esc(d.servings) + '" class="' + inputClass + '">', null)
+          '<div class="flex gap-2 items-center">'
+          + '<button type="button" data-action="serv-adjust" data-delta="-0.25" aria-label="Less" class="min-h-[44px] min-w-[44px] rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold text-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">−</button>'
+          + '<input id="detail-servings" type="number" inputmode="decimal" min="0.25" max="100" step="0.25" value="' + esc(d.servings) + '" class="' + inputClass + ' flex-1 text-center">'
+          + '<button type="button" data-action="serv-adjust" data-delta="0.25" aria-label="More" class="min-h-[44px] min-w-[44px] rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold text-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40">+</button>'
+          + '</div>', null)
 
-      + '<div class="mb-4"><span class="block text-sm font-medium mb-1.5">Meal</span>'
-      + optionGroup('detail_meal', MEAL_OPTIONS, d.meal, false)
-      + '</div>'
+      + '<p class="text-sm text-zinc-500 mb-4">Adding to <span class="font-semibold text-zinc-700 dark:text-zinc-300">' + MEAL_LABELS[d.meal] + '</span>'
+      + ' · <button type="button" data-action="detail-change-meal" class="font-semibold text-primary-700 dark:text-primary-400 underline">Change</button></p>'
 
       + (state.detailError ? '<p class="text-sm text-red-600 dark:text-red-400 mb-3">' + esc(state.detailError) + '</p>' : '')
 
-      + '<div class="flex gap-3">'
-      + '<button data-action="detail-add" ' + (state.detailSaving ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
+      + '<button data-action="detail-add" ' + (state.detailSaving ? 'disabled' : '') + ' class="w-full min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
       + (state.detailSaving ? 'Adding…' : 'Add to log') + '</button>'
-      + '</div>'
       + (food.custom
         ? '<div class="flex gap-3 mt-3">'
           + '<button data-action="detail-edit" class="flex-1 min-h-[44px] rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Edit</button>'
           + '<button data-action="detail-delete" class="flex-1 min-h-[44px] rounded-xl border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors">Delete</button>'
           + '</div>'
         : '')
-      + '</div></div>';
+      + '</div>';
   }
 
   function updateDetailNumbers() {
@@ -1245,6 +1403,7 @@
         state.add = null;
         state.meals = null;
         state.water = null;
+        state.waterSheet = null;
         state.log.tab = 'today';
         state.log.hist = null;
         state.log.histRange = null;
@@ -1252,6 +1411,13 @@
         window.location.hash = '#log';
         // If the hash was already #log, the hashchange handler will not fire.
         if (routeView() === 'log') enterLog();
+        // The toast is transient: remove it directly so no re-render
+        // interrupts whatever the user started typing next.
+        setTimeout(() => {
+          state.logToast = null;
+          const t = document.getElementById('log-toast');
+          if (t) t.remove();
+        }, 2600);
       })
       .catch((err) => {
         state.detailSaving = false;
@@ -1265,6 +1431,7 @@
       .then(() => {
         state.detail = null;
         state.add.results = null;
+        state.add.step = 2;
         render();
         runSearch(state.add ? state.add.q : '');
       })
@@ -1281,6 +1448,7 @@
     state.create = {
       id: editing ? food.custom_food_id : null,
       editing,
+      step: 1,               // 1 = name and serving, 2 = nutrition
       saving: false,
       serverError: null,
       errors: {},
@@ -1298,15 +1466,20 @@
     render();
   }
 
-  function validateCreate(d) {
+  // Per-step halves of the old validateCreate; the server's
+  // validateCustomFood stays the authority for the whole payload.
+  function validateCreateStep(step, d) {
     const errors = {};
-    if (!d.name || !d.name.trim()) errors.name = 'Enter a name';
-    else if (d.name.trim().length > 120) errors.name = 'Name must be 120 characters or fewer';
-    const sg = Number(d.serving_g);
-    if (!Number.isFinite(sg) || sg < 1 || sg > 500) errors.serving_g = 'Enter a serving size between 1 and 500 g';
-    for (const [field, label] of [['calories', 'calories'], ['protein_g', 'protein'], ['carbs_g', 'carbs'], ['fat_g', 'fat']]) {
-      const n = Number(d[field]);
-      if (!Number.isFinite(n) || n < 0 || n > 5000) errors[field] = 'Enter ' + label + ' between 0 and 5000';
+    if (step === 1) {
+      if (!d.name || !d.name.trim()) errors.name = 'Enter a name';
+      else if (d.name.trim().length > 120) errors.name = 'Name must be 120 characters or fewer';
+      const sg = Number(d.serving_g);
+      if (!Number.isFinite(sg) || sg < 1 || sg > 500) errors.serving_g = 'Enter a serving size between 1 and 500 g';
+    } else {
+      for (const [field, label] of [['calories', 'calories'], ['protein_g', 'protein'], ['carbs_g', 'carbs'], ['fat_g', 'fat']]) {
+        const n = Number(d[field]);
+        if (!Number.isFinite(n) || n < 0 || n > 5000) errors[field] = 'Enter ' + label + ' between 0 and 5000';
+      }
     }
     return errors;
   }
@@ -1315,16 +1488,30 @@
     const c = state.create;
     const d = c.data;
 
-    const body =
-      field('Name', textInput('cf_name', 'type="text" maxlength="120" placeholder="e.g. Grandma’s granola"', d.name), c.errors.name)
-      + field('Serving size (g)', textInput('cf_serving_g', 'type="number" inputmode="decimal" min="1" max="500" step="1" placeholder="g"', d.serving_g), c.errors.serving_g)
-      + field('Serving label <span class="font-normal text-zinc-500">(optional)</span>', textInput('cf_serving_label', 'type="text" maxlength="60" placeholder="e.g. 1 cup"', d.serving_label), null)
-      + '<div class="grid grid-cols-2 gap-3">'
-      + field('Calories', textInput('cf_calories', 'type="number" inputmode="decimal" min="0" max="5000" step="1" placeholder="kcal"', d.calories), c.errors.calories)
-      + field('Protein (g)', textInput('cf_protein_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.protein_g), c.errors.protein_g)
-      + field('Carbs (g)', textInput('cf_carbs_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.carbs_g), c.errors.carbs_g)
-      + field('Fat (g)', textInput('cf_fat_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.fat_g), c.errors.fat_g)
+    const stepsBar = '<div class="mb-6">'
+      + '<div class="flex gap-1.5 mb-2">'
+      + [1, 2].map((s) =>
+          '<span class="h-1.5 flex-1 rounded-full ' + (s <= c.step ? 'bg-primary-600' : 'bg-zinc-200 dark:bg-zinc-800') + '"></span>').join('')
+      + '</div>'
+      + '<p class="text-sm text-zinc-500">Step ' + c.step + ' of 2 · ' + (c.step === 1 ? 'Name and serving' : 'Nutrition per serving') + '</p>'
       + '</div>';
+
+    let body = '';
+    if (c.step === 1) {
+      body =
+        field('Name', textInput('cf_name', 'type="text" maxlength="120" placeholder="e.g. Grandma’s granola"', d.name), c.errors.name)
+        + field('Serving size (g)', textInput('cf_serving_g', 'type="number" inputmode="decimal" min="1" max="500" step="1" placeholder="g"', d.serving_g), c.errors.serving_g)
+        + field('Serving label <span class="font-normal text-zinc-500">(optional)</span>', textInput('cf_serving_label', 'type="text" maxlength="60" placeholder="e.g. 1 cup"', d.serving_label), null);
+    } else {
+      body =
+        (d.serving_label ? '<p class="text-sm text-zinc-500 mb-4">The amounts in one serving — ' + esc(String(d.serving_label)) + '</p>' : '')
+        + '<div class="grid grid-cols-2 gap-3">'
+        + field('Calories', textInput('cf_calories', 'type="number" inputmode="decimal" min="0" max="5000" step="1" placeholder="kcal"', d.calories), c.errors.calories)
+        + field('Protein (g)', textInput('cf_protein_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.protein_g), c.errors.protein_g)
+        + field('Carbs (g)', textInput('cf_carbs_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.carbs_g), c.errors.carbs_g)
+        + field('Fat (g)', textInput('cf_fat_g', 'type="number" inputmode="decimal" min="0" max="5000" step="0.1" placeholder="g"', d.fat_g), c.errors.fat_g)
+        + '</div>';
+    }
 
     const header = '<div class="flex items-center gap-2 mb-4">'
       + '<button data-action="create-back" aria-label="Back" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">' + iconBack + '</button>'
@@ -1332,12 +1519,13 @@
       + '</div>';
 
     const actions = '<div class="flex gap-3 mt-2">'
+      + '<button type="button" data-action="create-back" class="min-h-[44px] px-5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Back</button>'
       + '<button type="submit" ' + (c.saving ? 'disabled' : '') + ' class="flex-1 min-h-[44px] rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors disabled:opacity-60">'
-      + (c.saving ? 'Saving…' : 'Save food') + '</button></div>';
+      + (c.step < 2 ? 'Continue' : (c.saving ? 'Saving…' : 'Save food')) + '</button></div>';
 
     return card(header + '<form id="create-food-form" novalidate>'
       + (c.serverError ? '<div class="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 mb-4 text-sm text-red-700 dark:text-red-300">' + esc(c.serverError) + '</div>' : '')
-      + body + actions + '</form>');
+      + stepsBar + body + actions + '</form>');
   }
 
   function readCreateForm() {
@@ -1355,9 +1543,16 @@
     event.preventDefault();
     const c = state.create;
     readCreateForm();
-    const errors = validateCreate(c.data);
+    const errors = validateCreateStep(c.step, c.data);
     c.errors = errors;
     if (Object.keys(errors).length) { render(); return; }
+    if (c.step < 2) {
+      c.step = 2;
+      c.errors = {};
+      c.serverError = null;
+      render();
+      return;
+    }
     c.saving = true;
     c.serverError = null;
     render();
@@ -1373,15 +1568,23 @@
     const req = c.editing
       ? api('/api/custom-foods/' + c.id, { method: 'PUT', body: payload })
       : api('/api/custom-foods', { method: 'POST', body: payload });
-    req.then(() => {
+    req.then((data) => {
       state.create = null;
       state.add.results = null;
-      render();
-      runSearch(state.add ? state.add.q : '');
+      // The saved food is selected right away so it can be logged
+      // without hunting for it in the search results again.
+      if (data && data.food) openDetail(data.food);
+      else render();
     }).catch((err) => {
       c.saving = false;
-      if (err.status === 400 && err.data && err.data.errors) c.errors = err.data.errors;
-      else c.serverError = err.message || 'Could not save your food. Please try again.';
+      if (err.status === 400 && err.data && err.data.errors) {
+        c.errors = err.data.errors;
+        // Return to the step that owns the first reported error.
+        const owners = { name: 1, serving_g: 1, serving_label: 1, calories: 2, protein_g: 2, carbs_g: 2, fat_g: 2 };
+        for (const k of Object.keys(err.data.errors)) { c.step = owners[k] || 1; break; }
+      } else {
+        c.serverError = err.message || 'Could not save your food. Please try again.';
+      }
       render();
     });
   }
@@ -1528,7 +1731,13 @@
       + navTab('log', 'Food log', iconLog, active === 'log')
       + navTab('profile', 'Profile', iconProfile, active === 'profile')
       + '</div></nav>'
+      + (state.logToast ? toastHtml(state.logToast) : '')
       + '</div>';
+  }
+
+  function toastHtml(message) {
+    return '<div id="log-toast" class="fixed inset-x-0 bottom-24 z-30 flex justify-center px-4 pointer-events-none">'
+      + '<div class="rounded-full bg-zinc-900 dark:bg-zinc-700 text-white text-sm font-semibold px-4 py-2.5 shadow-lg">' + esc(message) + '</div></div>';
   }
 
   function navTab(view, label, icon, active) {
@@ -1567,7 +1776,8 @@
       return;
     }
     if (state.view === 'log') {
-      appEl.innerHTML = shell(logViewHtml());
+      appEl.innerHTML = shell(logViewHtml()
+        + (state.waterSheet && state.water ? waterSheetHtml() : ''));
       return;
     }
 
@@ -1578,11 +1788,9 @@
         if (form) form.addEventListener('submit', submitCreateForm);
         return;
       }
-      let html = shell(addViewHtml());
-      if (state.detail) {
-        html = shell(addViewHtml() + detailSheetHtml());
-      }
-      appEl.innerHTML = html;
+      appEl.innerHTML = shell(addViewHtml());
+      const mealForm = document.getElementById('add-meal-form');
+      if (mealForm) mealForm.addEventListener('submit', onMealStepSubmit);
       const form = document.getElementById('food-search-form');
       if (form) form.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -1599,7 +1807,8 @@
     }
 
     // dashboard
-    appEl.innerHTML = shell(dashboardHtml());
+    appEl.innerHTML = shell(dashboardHtml()
+      + (state.waterSheet && state.water ? waterSheetHtml() : ''));
   }
 
   // Serving input updates the numbers in place (no re-render, so focus and
@@ -1617,12 +1826,8 @@
     }
   });
 
-  appEl.addEventListener('change', (event) => {
-    const t = event.target;
-    if (t && t.type === 'radio' && t.name === 'detail_meal' && state.detail) {
-      state.detail.meal = t.value;
-    }
-  });
+  // The amount step keeps the meal visible rather than re-asking it as a
+  // radio group, so no detail_meal change listener is needed anymore.
 
   appEl.addEventListener('click', (event) => {
     const nav = event.target.closest('[data-nav]');
@@ -1676,6 +1881,48 @@
         });
       return;
     }
+    if (kind === 'water-sheet') {
+      if (state.water) { state.waterSheet = freshWaterSheet(); render(); }
+      return;
+    }
+    if (kind === 'water-sheet-close') {
+      state.waterSheet = null;
+      if (location.hash === '#log/water') {
+        history.replaceState(null, '', location.pathname + location.search + '#log');
+      }
+      render();
+      return;
+    }
+    if (kind === 'ws-adjust' || kind === 'ws-chip') {
+      const ws = state.waterSheet;
+      if (!ws || ws.saving) return;
+      const move = Number(action.getAttribute(kind === 'ws-adjust' ? 'data-delta' : 'data-glasses')) || 0;
+      ws.glasses = Math.min(WATER_MAX_GLASSES, Math.max(0, ws.glasses + move));
+      render();
+      return;
+    }
+    if (kind === 'ws-save') {
+      const ws = state.waterSheet;
+      if (!ws || ws.saving) return;
+      ws.saving = true;
+      ws.error = null;
+      render();
+      api('/api/water', { method: 'POST', body: { glasses: Math.min(WATER_MAX_GLASSES, Math.max(0, ws.glasses)) } })
+        .then((data) => {
+          state.water = Object.assign({}, state.water, data);
+          state.waterSheet = null;
+          if (location.hash === '#log/water') {
+            history.replaceState(null, '', location.pathname + location.search + '#log');
+          }
+          render();
+        })
+        .catch((err) => {
+          ws.saving = false;
+          ws.error = err.message || 'Could not save your water log';
+          render();
+        });
+      return;
+    }
     if (kind === 'log-tab') {
       const tab = action.getAttribute('data-tab');
       if (state.log.tab === tab) return;
@@ -1686,12 +1933,24 @@
       return;
     }
     if (kind === 'add-food') {
-      const meal = action.getAttribute('data-meal') || 'breakfast';
+      const meal = action.getAttribute('data-meal') || '';
       if (!state.add) state.add = freshAddState();
-      state.add.meal = meal;
+      if (meal) {
+        // Entered from a meal's own + Add: the meal question is answered.
+        state.add.meal = meal;
+        state.add.mealChosen = true;
+        state.add.step = 2;
+      } else {
+        // No meal context (dashboard empty state): start at the meal step.
+        state.add.meal = 'breakfast';
+        state.add.mealChosen = false;
+        state.add.step = 1;
+      }
+      state.add.pendingDetail = null;
       state.add.origin = state.view === 'log' ? '#log' : '#dashboard';
       state.add.results = null;
       state.add.error = null;
+      state.add.mealError = null;
       state.detail = null;
       state.create = null;
       location.hash = '#add';
@@ -1699,6 +1958,14 @@
       return;
     }
     if (kind === 'add-back') {
+      // From the amount step, Back returns to the find step; from anywhere
+      // else it leaves the wizard for where the user came from.
+      if (state.detail) {
+        state.detail = null;
+        state.detailError = null;
+        render();
+        return;
+      }
       const origin = (state.add && state.add.origin) || '#dashboard';
       state.add = null;
       state.detail = null;
@@ -1707,6 +1974,43 @@
       if (routeView() !== 'add') {
         if (origin === '#log') enterLog(); else { state.view = 'dashboard'; render(); if (!state.meals) loadDashboard(); }
       }
+      return;
+    }
+    if (kind === 'add-change-meal') {
+      const a = state.add;
+      if (!a) return;
+      if (state.detail) a.pendingDetail = state.detail;
+      state.detail = null;
+      state.detailError = null;
+      a.step = 1;
+      a.mealError = null;
+      render();
+      return;
+    }
+    if (kind === 'toggle-barcode') {
+      if (state.add) state.add.showBarcodeField = !state.add.showBarcodeField;
+      render();
+      return;
+    }
+    if (kind === 'serv-adjust') {
+      const d = state.detail;
+      if (!d) return;
+      const delta = Number(action.getAttribute('data-delta')) || 0;
+      d.servings = Math.min(100, Math.max(0.25, Math.round((d.servings + delta) * 100) / 100));
+      const inp = document.getElementById('detail-servings');
+      if (inp) inp.value = String(d.servings);
+      updateDetailNumbers();
+      return;
+    }
+    if (kind === 'detail-change-meal') {
+      const a = state.add;
+      if (!a) return;
+      a.pendingDetail = state.detail;
+      state.detail = null;
+      state.detailError = null;
+      a.step = 1;
+      a.mealError = null;
+      render();
       return;
     }
     if (kind === 'food-open') {
@@ -1723,7 +2027,6 @@
       toggleFavorite(key, isFav, favId);
       return;
     }
-    if (kind === 'detail-close') { state.detail = null; state.detailError = null; render(); return; }
     if (kind === 'detail-add') { addToLog(); return; }
     if (kind === 'detail-edit') { if (state.detail) openCreateForm(state.detail.food); return; }
     if (kind === 'detail-delete') {
@@ -1731,7 +2034,20 @@
       return;
     }
     if (kind === 'create-food') { openCreateForm(null); return; }
-    if (kind === 'create-back') { state.create = null; render(); return; }
+    if (kind === 'create-back') {
+      const c = state.create;
+      if (c && c.step === 2) {
+        c.step = 1;
+        c.errors = {};
+        c.serverError = null;
+        render();
+        return;
+      }
+      state.create = null;
+      render();
+      if (state.add && !state.add.results && !state.add.loading) runSearch(state.add.q || '');
+      return;
+    }
     if (kind === 'barcode-lookup') { lookupBarcode(); return; }
     if (kind === 'scan-barcode') { scanBarcode(); return; }
     if (kind === 'meal-remove') {
