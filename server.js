@@ -320,6 +320,27 @@ function buildDashboard(profile, goal, mealRows, glasses, date) {
   };
 }
 
+// Loads everything the dashboard shows for a user: profile, goal and today's
+// meals and water. Returns null when the user has not finished onboarding.
+// Shared by /api/dashboard and /api/state so the two cannot drift apart.
+async function loadDashboardState(userId) {
+  const loaded = await loadProfileAndGoal(userId);
+  if (!loaded || !loaded.goal) return null;
+  const day = todayKey();
+  const { rows: mealRows } = await pool.query(
+    `SELECT id, meal_type, name, calories, protein_g, carbs_g, fat_g, log_date, logged_at
+       FROM meal_logs WHERE user_id = $1 AND log_date = $2
+      ORDER BY logged_at`,
+    [userId, day]
+  );
+  const { rows: waterRows } = await pool.query(
+    `SELECT glasses FROM water_logs WHERE user_id = $1 AND log_date = $2`,
+    [userId, day]
+  );
+  const glasses = waterRows[0] ? waterRows[0].glasses : 0;
+  return buildDashboard(loaded.profile, loaded.goal, mealRows, glasses);
+}
+
 // GET /api/dashboard — today's calories, meals and water for the signed-in
 // user. 409 (not 404) when there is no profile yet: the frontend switches
 // to the onboarding wizard rather than showing an error.
@@ -329,26 +350,34 @@ app.get('/api/dashboard', async (req, res) => {
     return res.json({ demo: true, ...buildDashboard(demo.profile, demo.goal, demo.meals, 4) });
   }
   try {
-    const loaded = await loadProfileAndGoal(req.user.id);
-    if (!loaded || !loaded.goal) {
+    const state = await loadDashboardState(req.user.id);
+    if (!state) {
       return res.status(409).json({ error: 'Finish setting up your plan first' });
     }
-    const day = todayKey();
-    const { rows: mealRows } = await pool.query(
-      `SELECT id, meal_type, name, calories, protein_g, carbs_g, fat_g, log_date, logged_at
-         FROM meal_logs WHERE user_id = $1 AND log_date = $2
-        ORDER BY logged_at`,
-      [req.user.id, day]
-    );
-    const { rows: waterRows } = await pool.query(
-      `SELECT glasses FROM water_logs WHERE user_id = $1 AND log_date = $2`,
-      [req.user.id, day]
-    );
-    const glasses = waterRows[0] ? waterRows[0].glasses : 0;
-    res.json(buildDashboard(loaded.profile, loaded.goal, mealRows, glasses));
+    res.json(state);
   } catch (err) {
     console.error('GET /api/dashboard failed: ' + err.message);
     res.status(500).json({ error: 'Could not load today’s data. Please try again.' });
+  }
+});
+
+// GET /api/state — everything about the signed-in user today (profile, plan,
+// meals, water) in one read-only feed. Same shape and loader as the
+// dashboard; a fuller Home overview can consume this later.
+app.get('/api/state', async (req, res) => {
+  if (isDemoRequest(req)) {
+    const demo = demoData();
+    return res.json({ demo: true, ...buildDashboard(demo.profile, demo.goal, demo.meals, 4) });
+  }
+  try {
+    const state = await loadDashboardState(req.user.id);
+    if (!state) {
+      return res.status(409).json({ error: 'Finish setting up your plan first' });
+    }
+    res.json(state);
+  } catch (err) {
+    console.error('GET /api/state failed: ' + err.message);
+    res.status(500).json({ error: 'Could not load your data. Please try again.' });
   }
 });
 
