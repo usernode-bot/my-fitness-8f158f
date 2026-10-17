@@ -122,4 +122,5 @@ through the platform's LLM proxy.
   scan button only appears when both the native `BarcodeDetector` and the
   bridge capability are present, and the Barcode text field always works.
 - Brand colors: Tailwind `primary` (green) and `accent` (orange), defined in
-  `tailwind.config.js`. Use those tokens, not raw green-/orange- classes.
+  the `brand` block at the top of `tailwind.config.js` (the one place to
+  change the palette). Use those tokens, not raw green-/orange- classes.

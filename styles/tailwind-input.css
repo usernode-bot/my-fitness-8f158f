@@ -11,3 +11,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Brief color fade while the theme switches. The theme script in
+ * public/index.html puts `theme-fade` on <html> only for the moment of a
+ * light/dark change, so ordinary hover transitions (transition-colors)
+ * are untouched the rest of the time. Plain CSS, so it survives Tailwind
+ * purging. Inside no-preference only: reduced-motion users get the
+ * instant switch. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-fade,
+  html.theme-fade *,
+  html.theme-fade *::before,
+  html.theme-fade *::after {
+    transition-property: background-color, border-color, color, fill, stroke,
+      outline-color, text-decoration-color !important;
+    transition-duration: 200ms !important;
+    transition-timing-function: ease-out !important;
+  }
+}
