@@ -15,9 +15,23 @@
   ],
   "tests": [
     {
+      "id": "start.page",
+      "name": "Start page renders",
+      "path": "/",
+      "expectSelector": "#start",
+      "expectText": "Get started",
+      "visual": true,
+      "impact": [
+        "public/**",
+        "server.js",
+        "calculations.js",
+        "tailwind.config.js"
+      ]
+    },
+    {
       "id": "onboarding.wizard",
       "name": "Onboarding wizard renders",
-      "path": "/",
+      "path": "/#profile",
       "expectSelector": "#wizard",
       "visual": true,
       "impact": [
