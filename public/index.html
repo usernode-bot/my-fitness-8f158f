@@ -82,11 +82,29 @@
     // preference only when the app is open standalone.
     (function () {
       var media = window.matchMedia('(prefers-color-scheme: dark)');
+      var last = null;
+      var fadeTimer = null;
       function applyTheme() {
         var theme = (window.usernode && window.usernode.theme)
           || (media.matches ? 'dark' : 'light');
-        document.documentElement.classList.toggle('dark', theme === 'dark');
-        document.documentElement.style.colorScheme = theme;
+        // Fade only when the theme changes while the app is open; the
+        // first call applies with no fade so opening never flashes.
+        if (theme !== last) {
+          if (last !== null) {
+            var root = document.documentElement;
+            root.classList.add('theme-fade');
+            root.classList.toggle('dark', theme === 'dark');
+            root.style.colorScheme = theme;
+            clearTimeout(fadeTimer);
+            fadeTimer = setTimeout(function () {
+              root.classList.remove('theme-fade');
+            }, 250);
+          } else {
+            document.documentElement.classList.toggle('dark', theme === 'dark');
+            document.documentElement.style.colorScheme = theme;
+          }
+          last = theme;
+        }
       }
       applyTheme();
       window.addEventListener('usernode:theme-changed', applyTheme);

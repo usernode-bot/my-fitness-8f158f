@@ -9,6 +9,20 @@
 //   npm run build
 const { green, orange } = require('tailwindcss/colors');
 
+// ---------------------------------------------------------------------
+// Brand palette — THE ONE PLACE to change the app's colors.
+//
+// Swap either entry for any palette from `tailwindcss/colors` (e.g. blue,
+// rose) or for an object with shades 50–950. Accessibility guardrails:
+// keep 600 dark enough that white button text still passes WCAG AA
+// (4.5:1), and 400 light enough to read as text on dark backgrounds.
+// Shades the app actually uses: primary 400–700, accent 400–600.
+// ---------------------------------------------------------------------
+const brand = {
+  primary: green,
+  accent: orange,
+};
+
 module.exports = {
   // Every file that can contain a class name. Tailwind's extractor is a
   // regex over source text, so it finds class names written as whole
