@@ -161,7 +161,7 @@
 
   const state = {
     booted: false,
-    view: 'loading',          // loading | wizard | dashboard | log | add | signedout | bootError
+    view: 'loading',          // loading | start | wizard | dashboard | log | add | signedout | bootError
     onboarded: false,
     profile: null,
     goal: null,
@@ -297,6 +297,9 @@
       state.wiz = null;
       render();
       if (!state.meals) loadDashboard();
+    } else {
+      // Not onboarded yet: everything but the wizard stays on the start page.
+      showStart();
     }
   });
 
@@ -319,13 +322,19 @@
         else if (view === 'add') enterAdd();
         else { state.view = 'dashboard'; render(); loadDashboard(); }
       } else {
-        openWizard(false);
+        showStart();
       }
     } catch (err) {
       if (err.status === 401) { state.view = 'signedout'; render(); }
       else { state.bootError = err.message || 'Could not load the app'; state.view = 'bootError'; render(); }
     }
     state.booted = true;
+  }
+
+  function showStart() {
+    state.view = 'start';
+    state.wiz = null;
+    render();
   }
 
   function openWizard(editing) {
@@ -1706,6 +1715,20 @@
   }
 
   // ---------------------------------------------------------------------
+  // Start page: the first-run landing screen before onboarding
+  // ---------------------------------------------------------------------
+
+  function startHtml() {
+    return '<div id="start" class="flex flex-col items-center text-center py-16">'
+      + '<svg viewBox="0 0 100 100" class="w-14 h-14 text-primary-600 dark:text-primary-400 mb-4" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="currentColor"/><circle cx="50" cy="50" r="18" fill="white"/></svg>'
+      + '<h1 class="text-xl font-bold mb-2">My Fitness</h1>'
+      + '<p class="text-sm text-zinc-500 max-w-xs mb-6">Set a calorie and macro plan, then log your meals and water against it.</p>'
+      + '<button type="button" data-action="start-begin" class="min-h-[44px] px-6 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-semibold shadow-sm transition-colors">Get started</button>'
+      + '<p class="text-xs text-zinc-500 mt-4">A short setup builds your plan. You can change it any time.</p>'
+      + '</div>';
+  }
+
+  // ---------------------------------------------------------------------
   // Shell: sidebar on desktop, bottom nav on mobile
   // ---------------------------------------------------------------------
 
@@ -1781,6 +1804,10 @@
     if (state.view === 'bootError') {
       appEl.innerHTML = '<div class="min-h-screen flex items-center justify-center px-4">'
         + '<div class="max-w-sm text-center w-full">' + errorBox(state.bootError || 'Something went wrong', 'Try again') + '</div></div>';
+      return;
+    }
+    if (state.view === 'start') {
+      appEl.innerHTML = shell(startHtml());
       return;
     }
     if (state.view === 'wizard') {
@@ -1873,6 +1900,10 @@
       else if (state.view === 'add') runSearch(state.add ? state.add.q : '');
       else if (state.bootError) { delete state.bootError; state.view = 'loading'; render(); boot(); }
       else loadDashboard();
+      return;
+    }
+    if (kind === 'start-begin') {
+      location.hash = '#profile';
       return;
     }
     if (kind === 'wiz-back') {
